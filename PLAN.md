@@ -368,7 +368,7 @@ src/
 - **Catalogo rules have no domain code yet** (decision (a)): only DB backstops guard seed and test data. Closed by path step 1 of the decision record.
 - **Variante ↔ Stock creation** is not enforced by code today: a variante inserted without `StockService.crearItem()` gets 404 on stock movements. Acceptable while only the seed and tests create variants; closed by path step 3 of the decision record.
 - **`npm audit fix`** may leave advisories that need breaking bumps (e.g. `sqlite3` → `tar`). Documented, not forced.
-- **Delivery remote:** `origin` points to `Bidcomsrl/challenge-backend-ecommerce`. Create your own GitHub repo and change the remote before pushing. Nothing is pushed without your say-so.
+- **Delivery remote:** `origin` is `eprediger/challenge-backend-ecommerce` (SSH); `upstream` is `Bidcomsrl/challenge-backend-ecommerce`. Nothing is pushed without your say-so.
 - **Hexagonal vs lazy:** the stock port has one implementation. Kept on purpose because you chose to show the architecture.
 
 ## Open items (handoff)
