@@ -1,4 +1,21 @@
+# Published ports are bound to 127.0.0.1 on purpose. The bare 'HOST:CONTAINER' form listens on
+# 0.0.0.0 (every interface: Wi-Fi, LAN, VPN). Docker inserts its own iptables rules, which run
+# before UFW/firewalld, so a host firewall does NOT block those ports. With default credentials
+# (postgres/postgres), that exposes the database to anyone on the same network.
+# Loopback keeps host access (localhost:3000, psql -h localhost) and blocks other machines.
+# Container-to-container traffic goes over the compose network (e.g. postgres:5432) and does
+# not depend on this setting. To reach the app from another device, remove the '127.0.0.1:' prefix.
 services:
+  app:
+    image: node:22
+    user: node
+    working_dir: /app
+    volumes:
+      - .:/app
+    ports:
+      - '127.0.0.1:3000:3000'
+    command: npm run start:dev
+
   postgres:
     image: postgres:17-alpine
     environment:
@@ -6,7 +23,7 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: ecommerce_challenge
     ports:
-      - '5432:5432'
+      - '127.0.0.1:5432:5432'
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
