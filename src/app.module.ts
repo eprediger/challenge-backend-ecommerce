@@ -1,10 +1,11 @@
-import { Module } from '@nestjs/common';
+import { Module, type MiddlewareConsumer, type NestModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule, type TypeOrmModuleOptions } from '@nestjs/typeorm';
 import { AppController } from './app.controller';
 import { CatalogoModule } from './catalogo/catalogo.module';
 import { dataSourceOptions } from './data-source';
 import { loadEnv, type Env } from './env';
+import { wideEventMiddleware } from './shared/infrastructure/http/wide-event.middleware';
 import { StockModule } from './stock/stock.module';
 
 @Module({
@@ -31,4 +32,10 @@ import { StockModule } from './stock/stock.module';
   ],
   controllers: [AppController],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  constructor(private readonly config: ConfigService<Env, true>) {}
+
+  configure(consumer: MiddlewareConsumer): void {
+    consumer.apply(wideEventMiddleware(this.config)).forRoutes('{*path}');
+  }
+}

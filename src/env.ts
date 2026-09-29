@@ -6,6 +6,9 @@ dotenv.config();
 const comun = {
   PORT: z.coerce.number().int().min(1).max(65535),
   NODE_ENV: z.string().optional(),
+  // CI injects it at deploy time; absent locally — the only env var
+  // the observability layer reads, so it is still declared here.
+  COMMIT_HASH: z.string().optional(),
 };
 
 /**
@@ -35,7 +38,11 @@ const envSchema = z
     }),
   ])
   .transform((env) => ({
-    app: { port: env.PORT, nodeEnv: env.NODE_ENV },
+    app: {
+      port: env.PORT,
+      nodeEnv: env.NODE_ENV,
+      commitHash: env.COMMIT_HASH,
+    },
     database:
       env.DB_TYPE === 'postgres'
         ? {

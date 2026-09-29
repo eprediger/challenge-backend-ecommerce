@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type { Sku } from '../../shared/domain/sku';
+import { enrichWideEvent } from '../../shared/infrastructure/http/request-context';
 import type { Cantidad } from '../domain/cantidad';
 import { VarianteNoEncontradaError } from '../domain/errors';
 import type { Motivo } from '../domain/motivo';
@@ -50,6 +51,11 @@ export class StockService {
     cantidad: Cantidad,
     motivo: Motivo,
   ): Promise<MovimientoRegistrado> {
+    enrichWideEvent({
+      sku: sku.valor,
+      cantidad: cantidad.valor,
+      motivo: motivo.clave,
+    });
     const stock = await this.stockRepository.buscar(sku);
     if (stock === null) {
       throw new VarianteNoEncontradaError(sku);
@@ -67,6 +73,7 @@ export class StockService {
    *   for the SKU.
    */
   async stockDisponible(sku: Sku): Promise<number> {
+    enrichWideEvent({ sku: sku.valor });
     const stock = await this.stockRepository.buscar(sku);
     if (stock === null) {
       throw new VarianteNoEncontradaError(sku);

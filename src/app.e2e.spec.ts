@@ -1,7 +1,7 @@
 import { strict as assert } from 'node:assert';
 import { randomUUID } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
-import { after, before, describe, it } from 'node:test';
+import { after, afterEach, before, describe, it } from 'node:test';
 import type { INestApplication } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { DataSource } from 'typeorm';
@@ -26,6 +26,44 @@ interface StockResponse {
   stockDisponible: number;
 }
 
+async function crearVarianteConStock(
+  app: INestApplication,
+  sku: string,
+): Promise<void> {
+  const dataSource = app.get(DataSource);
+  const categoriaId = randomUUID();
+  const productoId = randomUUID();
+  await dataSource
+    .getRepository(CategoriaOrmEntity)
+    .insert({ id: categoriaId, nombre: 'Calzado' });
+  await dataSource.getRepository(ProductoOrmEntity).insert({
+    id: productoId,
+    nombre: 'Zapatilla Runner',
+    descripcion: 'Zapatilla de running',
+    precioCentavos: 129990,
+    moneda: 'ARS',
+    categoriaId,
+  });
+  await dataSource.getRepository(VarianteOrmEntity).insert({
+    id: randomUUID(),
+    sku,
+    productoId,
+  });
+  await app.get(StockService).crearItem(new Sku(sku));
+}
+
+function postMovimiento(
+  baseUrl: string,
+  body: unknown,
+  headers: Record<string, string> = {},
+): Promise<Response> {
+  return fetch(`${baseUrl}/stock/movimientos`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...headers },
+    body: JSON.stringify(body),
+  });
+}
+
 describe('POST /stock/movimientos y GET /stock/:sku', () => {
   let app: INestApplication;
   let baseUrl: string;
@@ -41,32 +79,18 @@ describe('POST /stock/movimientos y GET /stock/:sku', () => {
     await app.close();
   });
 
-  it('un INGRESO registra el movimiento y el GET responde el stock disponible', async () => {
-    const dataSource = app.get(DataSource);
-    const categoriaId = randomUUID();
-    const productoId = randomUUID();
-    await dataSource
-      .getRepository(CategoriaOrmEntity)
-      .insert({ id: categoriaId, nombre: 'Calzado' });
-    await dataSource.getRepository(ProductoOrmEntity).insert({
-      id: productoId,
-      nombre: 'Zapatilla Runner',
-      descripcion: 'Zapatilla de running',
-      precioCentavos: 129990,
-      moneda: 'ARS',
-      categoriaId,
-    });
-    await dataSource.getRepository(VarianteOrmEntity).insert({
-      id: randomUUID(),
-      sku: 'ZAP-42-NEG',
-      productoId,
-    });
-    await app.get(StockService).crearItem(new Sku('ZAP-42-NEG'));
+  // Drop and recreate the schema so each spec arranges from zero.
+  afterEach(async () => {
+    await app.get(DataSource).synchronize(true);
+  });
 
-    const response = await fetch(`${baseUrl}/stock/movimientos`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sku: 'ZAP-42-NEG', cantidad: 5, motivo: 'INGRESO' }),
+  it('un INGRESO registra el movimiento y el GET responde el stock disponible', async () => {
+    await crearVarianteConStock(app, 'ZAP-42-NEG');
+
+    const response = await postMovimiento(baseUrl, {
+      sku: 'ZAP-42-NEG',
+      cantidad: 5,
+      motivo: 'INGRESO',
     });
 
     assert.equal(response.status, 201);
@@ -85,5 +109,44 @@ describe('POST /stock/movimientos y GET /stock/:sku', () => {
     assert.equal(get.status, 200);
     const stock = (await get.json()) as StockResponse;
     assert.deepEqual(stock, { sku: 'ZAP-42-NEG', stockDisponible: 5 });
+  });
+
+  it('un request emite un wide event', async () => {
+    await crearVarianteConStock(app, 'REM-001');
+    const requestId = randomUUID();
+    const logs: Record<string, unknown>[] = [];
+    const originalLog = console.log;
+    console.log = (line: unknown) => {
+      try {
+        logs.push(JSON.parse(String(line)) as Record<string, unknown>);
+      } catch {
+        originalLog(line);
+      }
+    };
+
+    const response = await postMovimiento(
+      baseUrl,
+      { sku: 'REM-001', cantidad: 3, motivo: 'INGRESO' },
+      { 'x-request-id': requestId },
+    );
+    console.log = originalLog;
+    assert.equal(response.status, 201);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    const events = logs.filter((l) => typeof l.requestId === 'string');
+    assert.equal(events.length, 1);
+    const event = events[0]!;
+    assert.equal(event.requestId, requestId);
+    assert.equal(event.method, 'POST');
+    assert.equal(event.path, '/stock/movimientos');
+    assert.equal(event.statusCode, 201);
+    assert.equal(event.outcome, 'result');
+    assert.equal(typeof event.durationMs, 'number');
+    assert.equal(event.sku, 'REM-001');
+    assert.equal(event.cantidad, 3);
+    assert.equal(event.motivo, 'INGRESO');
+    assert.equal(event.service, 'ecommerce-challenge');
+    assert.equal(event.version, '1.0.0');
+    assert.equal(typeof event.instanceId, 'string');
   });
 });
