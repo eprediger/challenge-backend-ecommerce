@@ -331,7 +331,7 @@ src/
 
 14. [x] **`GET /docs sirve Swagger UI`** → `swagger-ui-express@5.0.1` (exact pin); wired in `main.ts` — the yaml is served raw from `docs/openapi.yaml` via `swaggerOptions.url`, no yaml parser. No smoke spec: asserting `/docs` returns HTML would test `swagger-ui-express` itself, not our code.
 
-15. [ ] **`una COMPRA descuenta stock`** (+ `GET` confirms): likely green on arrival — committed as spec coverage.
+15. [x] **`una COMPRA descuenta stock`** (+ `GET` confirms): green on arrival — committed as spec coverage.
 
 16. [ ] **`una COMPRA mayor al disponible → 409`,** the problem detail carries `stockDisponible` as an extension member, `SUM(delta)` unchanged → forces `DomainErrorFilter` (`StockInsuficienteError` → 409, `application/problem+json`).
 

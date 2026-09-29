@@ -11,6 +11,8 @@ import { ProductoOrmEntity } from './catalogo/infrastructure/persistence/product
 import { VarianteOrmEntity } from './catalogo/infrastructure/persistence/variante.orm-entity';
 import { Sku } from './shared/domain/sku';
 import { StockService } from './stock/application/stock.service';
+import { Cantidad } from './stock/domain/cantidad';
+import { Motivo } from './stock/domain/motivo';
 
 interface MovimientoResponse {
   id: string;
@@ -109,6 +111,32 @@ describe('POST /stock/movimientos y GET /stock/:sku', () => {
     assert.equal(get.status, 200);
     const stock = (await get.json()) as StockResponse;
     assert.deepEqual(stock, { sku: 'ZAP-42-NEG', stockDisponible: 5 });
+  });
+
+  it('una COMPRA descuenta el stock disponible', async () => {
+    await crearVarianteConStock(app, 'ZAP-40-BLA');
+    await app
+      .get(StockService)
+      .registrarMovimiento(
+        new Sku('ZAP-40-BLA'),
+        new Cantidad(10),
+        Motivo.INGRESO,
+      );
+
+    const response = await postMovimiento(baseUrl, {
+      sku: 'ZAP-40-BLA',
+      cantidad: 3,
+      motivo: 'COMPRA',
+    });
+
+    assert.equal(response.status, 201);
+    const movimiento = (await response.json()) as MovimientoResponse;
+    assert.equal(movimiento.motivo, 'COMPRA');
+    assert.equal(movimiento.stockDisponible, 7);
+
+    const get = await fetch(`${baseUrl}/stock/ZAP-40-BLA`);
+    const stock = (await get.json()) as StockResponse;
+    assert.deepEqual(stock, { sku: 'ZAP-40-BLA', stockDisponible: 7 });
   });
 
   it('un request emite un wide event', async () => {
