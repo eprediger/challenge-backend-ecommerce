@@ -152,7 +152,7 @@ The movement is rejected with **409**, nothing is recorded, and the body is a pr
 ### Domain errors → HTTP (mapped only in the HTTP adapter)
 | error | `type` (`urn:problem:*`) | raised by | HTTP |
 |---|---|---|---|
-| `CantidadInvalidaError` / `SkuInvalidoError` | `cantidad-invalida` / `sku-invalido` | value objects; `CantidadInvalidaError` also by the adapter (Postgres `22003` integer out of range) | 400 |
+| `CantidadInvalidaError` / `SkuInvalidoError` / `MotivoInvalidoError` | `cantidad-invalida` / `sku-invalido` / `validacion` | value objects and `Motivo.desde` (already caught earlier by the Zod enum; the error guards the domain boundary); `CantidadInvalidaError` also by the adapter (Postgres `22003` integer out of range) | 400 |
 | *(Zod shape error)* | `validacion` | `ZodValidationPipe` | 400 |
 | `VarianteNoEncontradaError` | `variante-no-encontrada` | application service (no `Stock` for the SKU) | 404 |
 | `StockInsuficienteError` | `stock-insuficiente` | `Stock.registrar()` or the adapter (lost race) | 409 |
@@ -230,7 +230,8 @@ src/
   main.ts                         (global ValidationPipe removed; serves /openapi.yaml + Swagger UI at /docs)
   seed.ts
   app.e2e.spec.ts
-  shared/domain/sku.ts            Sku + SkuInvalidoError
+  shared/domain/sku.ts            Sku
+  shared/domain/sku-invalido.error.ts
   shared/infrastructure/http/zod-validation.pipe.ts
   shared/infrastructure/http/wide-event.interceptor.ts   one JSON event per request; ALS context
   catalogo/
@@ -244,7 +245,9 @@ src/
       cantidad.ts
       stock.ts                    aggregate root: crear(sku), registrar()
       movimiento.ts
-      errors.ts                   CantidadInvalidaError, StockInsuficienteError, VarianteNoEncontradaError
+      errors.ts                   barrel — one error class per file
+      *.error.ts                  CantidadInvalidaError, MotivoInvalidoError,
+                                  StockInsuficienteError, VarianteNoEncontradaError
       stock.repository.ts         port (abstract class = Nest DI token, no Symbol): buscar, crear, guardar
       stock.spec.ts               domain unit check, no DB
     application/stock.service.ts  crearItem(), registrarMovimiento(), stockDisponible()
@@ -309,11 +312,11 @@ src/
 
 7. [x] **`Cantidad` VO:** rejects 0, −1, 1.5, `1e20`; accepts `Number.MAX_SAFE_INTEGER` → `Cantidad` + `CantidadInvalidaError`.
 
-8. [ ] **`un INGRESO aumenta el stock disponible`:** forces `Motivo`/`Direccion` (`direccion()`), `Stock.crear(sku)` and `Stock.registrar()`, which updates `disponible` and returns a `Movimiento` with a `randomUUID()` id and the given `fecha`.
+8. [x] **`un INGRESO aumenta el stock disponible`:** forces `Motivo`/`Direccion` (`motivo.direccion` — `Motivo` is an enumeration class: each instance carries its direccion; `desde()` parses a `clave`; adapters serialize `clave` — no `toJSON`, wire shape is a boundary concern), `Stock.crear(sku)` and `Stock.registrar()`, which updates `disponible` and returns a `Movimiento` with a `randomUUID()` id and the given `fecha`.
 
-9. [ ] **`una SALIDA descuenta el stock disponible`:** parametrized over COMPRA / AJUSTE_NEGATIVO; may go green immediately — kept as spec coverage.
+9. [x] **`una SALIDA descuenta el stock disponible`:** parametrized over COMPRA / AJUSTE_NEGATIVO; may go green immediately — kept as spec coverage.
 
-10. [ ] **`una SALIDA mayor al disponible es rechazada`:** `StockInsuficienteError`, `disponible` unchanged, no movimiento returned → forces the guard in `registrar`.
+10. [x] **`una SALIDA mayor al disponible es rechazada`:** `StockInsuficienteError`, `disponible` unchanged, no movimiento returned → forces the guard in `registrar`.
 
 **Walking skeleton** (first e2e — carries the whole vertical's cost):
 

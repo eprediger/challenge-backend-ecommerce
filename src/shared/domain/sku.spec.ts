@@ -1,6 +1,7 @@
 import { strict as assert } from 'node:assert';
 import { describe, it } from 'node:test';
-import { Sku, SkuInvalidoError } from './sku';
+import { Sku } from './sku';
+import { SkuInvalidoError } from './sku-invalido.error';
 
 describe('Sku', () => {
   it('conserva el valor de un SKU no vacío', () => {
