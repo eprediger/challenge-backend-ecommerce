@@ -44,4 +44,12 @@ export default tseslint.config(
       '@typescript-eslint/no-unsafe-argument': 'off',
     },
   },
+  {
+    // In specs the floating promise is the test runner's API surface:
+    // top-level describe/it return promises the runner itself tracks.
+    files: ['**/*.spec.ts'],
+    rules: {
+      '@typescript-eslint/no-floating-promises': 'off',
+    },
+  },
 );
