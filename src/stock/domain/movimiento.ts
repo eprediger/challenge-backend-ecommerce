@@ -17,9 +17,10 @@ export class Movimiento {
   ) {}
 
   /**
-   * The signed amount this movement adds to `disponible`:
+   * The signed amount this movement adds to `cantidadDisponible`:
    * `cantidad × direccion` (positive for ENTRADA, negative for SALIDA).
-   * Stored signed so `disponible` is a plain `SUM` of movements.
+   * Stored signed so `cantidadDisponible` is a plain `SUM` of
+   * movements.
    *
    * @returns The signed delta, never zero.
    */

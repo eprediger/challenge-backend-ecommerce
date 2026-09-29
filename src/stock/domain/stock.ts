@@ -6,20 +6,20 @@ import type { Motivo } from './motivo';
 import { Movimiento } from './movimiento';
 
 /**
- * Aggregate root guarding the invariant `disponible >= 0` for one
- * `Sku`. Its only behaviour is `registrar`; it creates movements but
- * does not hold the history — loading every movement to change one
+ * Aggregate root guarding the invariant `cantidadDisponible >= 0` for
+ * one `Sku`. Its only behaviour is `registrar`; it creates movements
+ * but does not hold the history — loading every movement to change one
  * number would scale badly.
  */
 export class Stock {
   /**
    * @param sku - Identifies the `Variante` this stock belongs to.
-   * @param disponible - Units on hand; `0` for new stock, a persisted
-   *   value when the adapter rehydrates.
+   * @param cantidadDisponible - Units on hand; `0` for new stock, a
+   *   persisted value when the adapter rehydrates.
    */
   constructor(
     readonly sku: Sku,
-    private _disponible = 0,
+    private _cantidadDisponible = 0,
   ) {}
 
   /**
@@ -30,16 +30,16 @@ export class Stock {
   }
 
   /**
-   * Units currently available; the value the `disponible >= 0`
+   * Units currently available; the value the `cantidadDisponible >= 0`
    * invariant protects.
    */
-  get disponible(): number {
-    return this._disponible;
+  get cantidadDisponible(): number {
+    return this._cantidadDisponible;
   }
 
   /**
-   * Applies `cantidad × direccion(motivo)` to `disponible` and returns
-   * the `Movimiento` that records it.
+   * Applies `cantidad × direccion(motivo)` to `cantidadDisponible` and
+   * returns the `Movimiento` that records it.
    *
    * @param cantidad - Units moved (always positive; the `motivo`
    *   carries the sign).
@@ -48,8 +48,8 @@ export class Stock {
    *   clock.
    * @returns The created `Movimiento`, id generated here.
    * @throws {@link StockInsuficienteError} when the delta would leave
-   *   `disponible` negative; nothing is recorded and `disponible` is
-   *   unchanged.
+   *   `cantidadDisponible` negative; nothing is recorded and
+   *   `cantidadDisponible` is unchanged.
    * @remarks
    * Within one request this is the fast-fail check on the loaded
    * snapshot; the database's conditional UPDATE arbitrates concurrent
@@ -63,11 +63,16 @@ export class Stock {
       motivo,
       fecha,
     );
-    const nuevoDisponible = this._disponible + movimiento.deltaConSigno();
-    if (nuevoDisponible < 0) {
-      throw new StockInsuficienteError(this.sku, this._disponible, cantidad);
+    const nuevaCantidadDisponible =
+      this._cantidadDisponible + movimiento.deltaConSigno();
+    if (nuevaCantidadDisponible < 0) {
+      throw new StockInsuficienteError(
+        this.sku,
+        this._cantidadDisponible,
+        cantidad,
+      );
     }
-    this._disponible = nuevoDisponible;
+    this._cantidadDisponible = nuevaCantidadDisponible;
     return movimiento;
   }
 }

@@ -4,3 +4,4 @@
 export { CantidadInvalidaError } from './cantidad-invalida.error';
 export { MotivoInvalidoError } from './motivo-invalido.error';
 export { StockInsuficienteError } from './stock-insuficiente.error';
+export { VarianteNoEncontradaError } from './variante-no-encontrada.error';

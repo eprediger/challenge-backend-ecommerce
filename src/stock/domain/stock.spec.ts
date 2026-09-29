@@ -10,10 +10,10 @@ const unSku = (): Sku => new Sku('ZAP-42-NEG');
 const unaFecha = (): Date => new Date('2026-01-01T00:00:00.000Z');
 
 describe('Stock', () => {
-  it('se crea con stock disponible en cero', () => {
+  it('se crea con cantidad disponible en cero', () => {
     const stock = Stock.crear(unSku());
 
-    assert.equal(stock.disponible, 0);
+    assert.equal(stock.cantidadDisponible, 0);
     assert.equal(stock.sku.valor, 'ZAP-42-NEG');
   });
 
@@ -26,7 +26,7 @@ describe('Stock', () => {
       unaFecha(),
     );
 
-    assert.equal(stock.disponible, 5);
+    assert.equal(stock.cantidadDisponible, 5);
     assert.equal(movimiento.cantidad.valor, 5);
     assert.equal(movimiento.motivo, Motivo.INGRESO);
     assert.equal(movimiento.sku.valor, 'ZAP-42-NEG');
@@ -45,7 +45,7 @@ describe('Stock', () => {
 
       const movimiento = stock.registrar(new Cantidad(3), motivo, unaFecha());
 
-      assert.equal(stock.disponible, 2);
+      assert.equal(stock.cantidadDisponible, 2);
       assert.equal(movimiento.deltaConSigno(), -3);
     });
   }
@@ -58,9 +58,9 @@ describe('Stock', () => {
       () => stock.registrar(new Cantidad(3), Motivo.COMPRA, unaFecha()),
       (error: unknown) =>
         error instanceof StockInsuficienteError &&
-        error.stockDisponible === 2,
+        error.cantidadDisponible === 2,
     );
 
-    assert.equal(stock.disponible, 2);
+    assert.equal(stock.cantidadDisponible, 2);
   });
 });

@@ -21,7 +21,7 @@ export class Motivo {
   private constructor(
     /** How the reason appears in the API and the database. */
     readonly clave: string,
-    /** Which way this reason moves `disponible`. */
+    /** Which way this reason moves `cantidadDisponible`. */
     readonly direccion: Direccion,
   ) {}
 

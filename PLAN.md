@@ -20,8 +20,8 @@ Implement stock movements with two bounded contexts (Catalogo, Stock) joined onl
 - **API docs (contract-first):** `docs/openapi.yaml` is written **before** any implementation and is the API's source of truth (2 endpoints, request/response/error schemas, status codes); the e2e cycles are its executable check. Served at `GET /docs` with `swagger-ui-express` (exact pin; the yaml is served raw via `swaggerOptions.url`, so no yaml parser). `@nestjs/swagger` rejected: it generates the spec from decorators on DTO *classes* — code-first, the opposite direction — and our DTOs are `z.infer` types with no classes to decorate. Drift risk between the contract and the Zod schema is real but small (4 schemas, reviewed by hand).
 - **Observability — wide events:** one structured event per request, emitted exactly once at the end — success or failure — as a single JSON line to stdout (canonical log lines: https://loggingsucks.com/; the `logging-best-practices` skill is installed globally and governs this). Fields: request metadata (`requestId`, `method`, `path`, `statusCode`, `durationMs`), domain context the request itself enriches (`sku`, `cantidad`, `motivo`, outcome, `error{type,message}` on failures), and environment context captured once at startup (`service`, `version`, `commitHash`, `instanceId`, `nodeEnv`). Two levels only: `info` normally, `error` when `outcome` is `error`. Implemented as a `WideEventInterceptor` + an `AsyncLocalStorage` context (`node:async_hooks`, stdlib); no scattered log lines and no logging library — one write per request doesn't need one. `ponytail: no tail sampling (keep errors + slow requests, sample the rest) — meaningless at dev volumes; emission is one place, so a shouldSample(event) predicate slots in later without touching the format.`
 - **Tests:** built-in `node:test` + the already-installed `ts-node` + native `fetch`. No new dependencies. Specs are test-first and follow Arrange / Act / Assert (see "Implementation steps").
-- **Language (ubiquitous language):** the API, docs, domain model and table/column names use the statement's Spanish terms — `Producto`, `Variante`, `Categoria`, `AtributoVariante`, `Dinero`, `Stock`, `Movimiento`, `Cantidad`, `Motivo`, `Direccion`, `Sku`, `disponible`, `fecha`. This holds in `domain/` and `application/` (`StockService.registrarMovimiento`, port methods `buscar`/`crear`/`guardar`); technical suffixes and infrastructure keep English names (`*Service`, `*Repository`, `*OrmEntity`, pipes, filters, controller). Commits in English, following [Conventional Commits](https://www.conventionalcommits.org) — `type(scope): subject` (`feat`, `fix`, `test`, `chore`, `docs`, `refactor`; scope optional, e.g. `feat(stock):`, `chore(deps):`). DDD vocabulary itself is not translated — it names patterns, not domain concepts: value object, aggregate root, entity, port, adapter and bounded context stay in English (same as the `*Service`/`*Repository` suffixes).
-- **Doc comments: TSDoc, English prose.** Exported declarations (classes, functions, ports, public methods) carry `/** … */` doc comments in [TSDoc](https://tsdoc.org) format — `@param`, `@returns`, `@throws`, `@remarks`. Prose is **English**: only domain words appear in Spanish, spelled exactly as in code (`Sku`, `disponible`, `Stock.registrar`). The only words in Spanish anywhere are the ubiquitous-language ones. Exceptions: error `detail` messages stay Spanish (API output, already in the contract's examples) and spec titles stay Spanish (deliberate executable narration of domain behaviour). Inline `//` comments follow the same rule, and `ponytail:` markers keep their format. No eslint-plugin-tsdoc dependency: a convention reviewers can check, not another package.
+- **Language (ubiquitous language):** the API, docs, domain model and table/column names use the statement's Spanish terms — `Producto`, `Variante`, `Categoria`, `AtributoVariante`, `Dinero`, `Stock`, `Movimiento`, `Cantidad`, `Motivo`, `Direccion`, `Sku`, `cantidadDisponible`, `fecha`. This holds in `domain/` and `application/` (`StockService.registrarMovimiento`, port methods `buscar`/`crear`/`guardar`); technical suffixes and infrastructure keep English names (`*Service`, `*Repository`, `*OrmEntity`, pipes, filters, controller). Commits in English, following [Conventional Commits](https://www.conventionalcommits.org) — `type(scope): subject` (`feat`, `fix`, `test`, `chore`, `docs`, `refactor`; scope optional, e.g. `feat(stock):`, `chore(deps):`). DDD vocabulary itself is not translated — it names patterns, not domain concepts: value object, aggregate root, entity, port, adapter and bounded context stay in English (same as the `*Service`/`*Repository` suffixes).
+- **Doc comments: TSDoc, English prose.** Exported declarations (classes, functions, ports, public methods) carry `/** … */` doc comments in [TSDoc](https://tsdoc.org) format — `@param`, `@returns`, `@throws`, `@remarks`. Prose is **English**: only domain words appear in Spanish, spelled exactly as in code (`Sku`, `cantidadDisponible`, `Stock.registrar`). The only words in Spanish anywhere are the ubiquitous-language ones. Exceptions: error `detail` messages stay Spanish (API output, already in the contract's examples) and spec titles stay Spanish (deliberate executable narration of domain behaviour). Inline `//` comments follow the same rule, and `ponytail:` markers keep their format. No eslint-plugin-tsdoc dependency: a convention reviewers can check, not another package.
 - **Tooling:** everything runs through `docker compose run --rm app npm …` (no shell alias).
 
 ## Domain model
@@ -67,7 +67,7 @@ classDiagram
         class StockAgg["Stock"] {
             <<Aggregate Root>>
             sku : Sku
-            disponible : int ≥ 0
+            cantidadDisponible : int ≥ 0
             registrar(cantidad, motivo, fecha) Movimiento
         }
         class Movimiento {
@@ -129,10 +129,10 @@ classDiagram
 - Upgrade path (documented): option / option-value tables (`AtributoVariante` gains an `opcionValorId`) when names must be normalised per product or validated per category.
 
 ### Stock context ("how many can we sell, and what happened")
-- `Stock` is the aggregate root guarding the invariant **`disponible ≥ 0`**. It has one behaviour, `registrar(cantidad, motivo, fecha)`:
+- `Stock` is the aggregate root guarding the invariant **`cantidadDisponible ≥ 0`**. It has one behaviour, `registrar(cantidad, motivo, fecha)`:
   - delta = `cantidad × motivo.direccion()`;
-  - if `disponible + delta < 0` → `StockInsuficienteError`;
-  - else updates `disponible` and **returns** a new immutable `Movimiento`, created valid with its id (`randomUUID()`) and `fecha` (the `fecha` passed in).
+  - if `cantidadDisponible + delta < 0` → `StockInsuficienteError`;
+  - else updates `cantidadDisponible` and **returns** a new immutable `Movimiento`, created valid with its id (`randomUUID()`) and `fecha` (the `fecha` passed in).
 - `Stock` creates movements but does **not** hold the history (loading every movement to change one number would scale badly).
 - `Cantidad`: positive safe integer (`Number.isSafeInteger`, no business maximum). `0`, negatives, fractions and unsafe integers can't be represented in the domain (`CantidadInvalidaError`).
 - `Sku`: trimmed, non-empty (`SkuInvalidoError`); no maximum length in the domain. Shared by both contexts; it is the only link between them.
@@ -164,8 +164,8 @@ The movement is rejected with **409**, nothing is recorded, and the body is a pr
 | Invariant | Scope | Domain (primary) | Database (backstop) |
 |---|---|---|---|
 | `Cantidad` positive safe integer; `Sku` trimmed and non-empty | one value | value object constructors | `CHECK delta <> 0`; Postgres `integer` range (`22003` → `CantidadInvalidaError`) |
-| `disponible ≥ 0` for one request | one aggregate | `Stock.registrar()` | `CHECK disponible >= 0` |
-| `disponible ≥ 0` under concurrent requests | across requests | rejects on its snapshot, can't see a concurrent commit | conditional `UPDATE`; adapter maps "0 rows" to `StockInsuficienteError` |
+| `cantidadDisponible ≥ 0` for one request | one aggregate | `Stock.registrar()` | `CHECK cantidad_disponible >= 0` |
+| `cantidadDisponible ≥ 0` under concurrent requests | across requests | rejects on its snapshot, can't see a concurrent commit | conditional `UPDATE`; adapter maps "0 rows" to `StockInsuficienteError` |
 | Attribute names unique within a variant *(target model)* | one aggregate | `Variante` constructor | `PK (variante_id, nombre)` |
 | SKU unique across variants *(target model)* | across aggregates | checked via a port, `SkuDuplicadoError` | unique index; adapter maps the violation to `SkuDuplicadoError` |
 
@@ -176,9 +176,9 @@ Within one request, the app never depends on a constraint for correctness; it de
 2. `StockService.registrarMovimiento()` loads the `Stock` via the `StockRepository` port → none: `VarianteNoEncontradaError`.
 3. `stock.registrar(cantidad, motivo, ahora)` → fast fail on the loaded snapshot, or returns the `Movimiento`.
 4. `repository.guardar(movimiento)` → the adapter, in one transaction:
-   - `UPDATE stock SET disponible = disponible + :delta WHERE sku = :sku AND disponible + :delta >= 0` (writes the **delta**, never the in-memory absolute value);
+   - `UPDATE stock SET cantidad_disponible = cantidad_disponible + :delta WHERE sku = :sku AND cantidad_disponible + :delta >= 0` (writes the **delta**, never the in-memory absolute value);
    - 0 rows affected → another request won the race → `StockInsuficienteError`;
-   - 1 row → insert the movement row, re-read `disponible`;
+   - 1 row → insert the movement row, re-read `cantidad_disponible`;
    - Postgres error `22003` (integer out of range) → `CantidadInvalidaError`.
 5. Response 201 with the movement and the new `stockDisponible`.
 
@@ -187,7 +187,7 @@ The domain **defines** the rule and is unit-testable without a database. The ada
 ## Concurrency
 - **Postgres:** the conditional UPDATE takes a row lock; a waiting transaction re-checks the `WHERE` after getting it, so no overselling and no `SELECT … FOR UPDATE`.
 - **SQLite:** TypeORM shares one QueryRunner, so concurrent `transaction()` calls nest as SAVEPOINTs. The adapter serializes its transactions with a small in-process promise mutex when `type === 'sqlite'`. Marked `ponytail: single-process only; SQLite is single-writer anyway, Postgres path uses real transactions`.
-- DB `CHECK (disponible >= 0)` as the last backstop.
+- DB `CHECK (cantidad_disponible >= 0)` as the last backstop.
 
 ### Evidence for the SQLite claim
 - `node_modules/typeorm/driver/sqlite/SqliteDriver.js` lines 42-46: `createQueryRunner()` always returns the same `this.queryRunner`.
@@ -202,16 +202,16 @@ The domain **defines** the rule and is unit-testable without a database. The ada
 | `producto` | id uuid PK, nombre, descripcion, precio_centavos int, moneda, categoria_id FK | catalogo |
 | `variante` | id uuid PK, sku text unique, producto_id FK | catalogo |
 | `atributo_variante` | **PK (variante_id, nombre)**, variante_id FK → variante ON DELETE CASCADE, nombre text, valor text | catalogo |
-| `stock` | sku text PK (FK → variante.sku), disponible int default 0, CHECK disponible >= 0 | stock |
+| `stock` | sku text PK, cantidad_disponible int default 0, CHECK cantidad_disponible >= 0 (no FK to variante: declaring it needs an ORM relation, which would import a Catalogo entity — contexts meet only at `Sku`; `crearItem` is the enforcement) | stock |
 | `movimiento_stock` | id uuid PK, sku FK → stock, delta int CHECK delta <> 0, motivo simple-enum, fecha | stock |
 
 - **Ids:** assigned by the domain (`randomUUID()`), never generated by the database. TypeORM `@PrimaryColumn('uuid')` maps to native `uuid` on Postgres and `varchar` on SQLite (`AbstractSqliteDriver.js` line 446), so it stays portable. `ponytail: UUID v4 is random, so B-tree inserts have poor locality at large volumes; switch to UUIDv7 if insert-heavy tables grow large (Node 22 has no built-in v7).`
 - **No length limits on text columns.** `sku`, `nombre`, `valor` are `text`: Postgres `varchar(n)` adds a check but no storage or performance gain, and SQLite ignores the length anyway — a `varchar(n)` would be an invented limit. The only residual cap is Postgres's B-tree index-entry size (~2.7KB), reachable only on insert; the stock endpoints never insert SKUs, so an over-length SKU gets 404, never a database error.
 - **`atributo_variante` has no surrogate id:** `AtributoVariante` is a value object (no identity), so its row is identified by `(variante_id, nombre)`. That composite PK is also the uniqueness backstop.
 - **Why a related table instead of a JSON column:** TypeORM's `simple-json` is plain `TEXT` on both databases, so it can't be indexed, filtered or constrained; `jsonb` would be Postgres-only and break dual-database support. The table is plainly relational, filterable in SQL (`nombre = 'talle' AND valor = '42'`) on both databases, and halfway to option tables (replace `nombre`/`valor` text with foreign keys). Cost: one ORM entity file and one join when loading variants (Stock never loads attributes).
-- **Invariant checkable in SQL:** `stock.disponible == SUM(movimiento_stock.delta)` per SKU. Stock only changes through movements (the seed too).
+- **Invariant checkable in SQL:** `stock.cantidad_disponible == SUM(movimiento_stock.delta)` per SKU. Stock only changes through movements (the seed too).
 - `delta` is stored signed so the invariant is a plain `SUM`; the mapper rebuilds `Cantidad = |delta|`.
-- **Why a separate `stock` table, not a column on `variante`:** each context owns its tables, so the stock adapter never touches catalog entities. The cost is one extra table. Creating a variant must create its `Stock(disponible 0)`. Today only the seed creates variants; with catalog CRUD, variant creation would do it (or publish an event).
+- **Why a separate `stock` table, not a column on `variante`:** each context owns its tables, so the stock adapter never touches catalog entities. The cost is one extra table. Creating a variant must create its `Stock(cantidadDisponible 0)`. Today only the seed creates variants; with catalog CRUD, variant creation would do it (or publish an event).
 
 ## API
 - `POST /stock/movimientos`, body `{ sku, cantidad, motivo }`
@@ -275,7 +275,7 @@ src/
 1. **Storage shapes are final.** `precio_centavos` int + `moneda`, the `atributo_variante` table, `sku` unique, uuid primary keys assigned by the app. These are the choices that are expensive to change once data exists, and cheap to get right now. Adding Catalogo endpoints needs no data migration.
 2. **Folder slots match the Stock module.** `catalogo/infrastructure/persistence/` already sits where the hexagonal layout expects it. Adding endpoints means adding `catalogo/domain/`, `catalogo/application/` and `catalogo/infrastructure/http/` next to it; nothing moves or gets renamed.
 3. **Contexts meet only at `Sku`.** `Sku` lives in `shared/domain/`. Stock code never imports Catalogo code, and each context owns its tables (`stock` is separate from `variante`). Catalogo endpoints can be added without touching Stock, and the reverse.
-4. **One explicit integration point: `StockService.crearItem(sku)`.** It is the only way a `Stock(disponible 0)` is created. Today the seed and the e2e test call it. Tomorrow Catalogo's "create variante" use case calls it (a direct call while both contexts share a process and a database; a domain event if they are ever split).
+4. **One explicit integration point: `StockService.crearItem(sku)`.** It is the only way a `Stock(cantidadDisponible 0)` is created. Today the seed and the e2e test call it. Tomorrow Catalogo's "create variante" use case calls it (a direct call while both contexts share a process and a database; a domain event if they are ever split).
 5. **Cross-context reads compose in the application layer.** For example, a future `GET /catalogo/productos/:id` with stock = a Catalogo query + `StockService.stockDisponible(sku)` per variante. No ORM joins across the two contexts.
 6. **The seed is a stand-in for Catalogo use cases.** Its Catalogo part (direct ORM inserts) becomes a call to `CatalogoService.crearProducto()` once that exists; its Stock part already goes through `StockService`.
 
@@ -312,17 +312,17 @@ src/
 
 7. [x] **`Cantidad` VO:** rejects 0, −1, 1.5, `1e20`; accepts `Number.MAX_SAFE_INTEGER` → `Cantidad` + `CantidadInvalidaError`.
 
-8. [x] **`un INGRESO aumenta el stock disponible`:** forces `Motivo`/`Direccion` (`motivo.direccion` — `Motivo` is an enumeration class: each instance carries its direccion; `desde()` parses a `clave`; adapters serialize `clave` — no `toJSON`, wire shape is a boundary concern), `Stock.crear(sku)` and `Stock.registrar()`, which updates `disponible` and returns a `Movimiento` with a `randomUUID()` id and the given `fecha`.
+8. [x] **`un INGRESO aumenta el stock disponible`:** forces `Motivo`/`Direccion` (`motivo.direccion` — `Motivo` is an enumeration class: each instance carries its direccion; `desde()` parses a `clave`; adapters serialize `clave` — no `toJSON`, wire shape is a boundary concern), `Stock.crear(sku)` and `Stock.registrar()`, which updates `cantidadDisponible` and returns a `Movimiento` with a `randomUUID()` id and the given `fecha`.
 
 9. [x] **`una SALIDA descuenta el stock disponible`:** parametrized over COMPRA / AJUSTE_NEGATIVO; may go green immediately — kept as spec coverage.
 
-10. [x] **`una SALIDA mayor al disponible es rechazada`:** `StockInsuficienteError`, `disponible` unchanged, no movimiento returned → forces the guard in `registrar`.
+10. [x] **`una SALIDA mayor al disponible es rechazada`:** `StockInsuficienteError`, `cantidadDisponible` unchanged, no movimiento returned → forces the guard in `registrar`.
 
 **Walking skeleton** (first e2e — carries the whole vertical's cost):
 
 11. [x] **feat(catalogo): persistence scaffold** — `categoria`, `producto`, `variante`, `atributo_variante` ORM entities per the decision record (no behaviour to test-drive; the e2e setup needs a `variante` row). `@PrimaryColumn('uuid')` everywhere; `atributo_variante` composite PK `(variante_id, nombre)`, `@ManyToOne` → variante (`onDelete: 'CASCADE'`).
 
-12. [ ] **test: `POST /stock/movimientos` INGRESO → 201 and `GET /stock/:sku` → `stockDisponible`** (red: 404, the route doesn't exist) → minimum vertical that passes: `stock`/`movimiento_stock` ORM entities (`@Check` backstops, `sku text`), `TypeOrmStockRepository` (`buscar`/`crear`/`guardar` — the simplest single-request read-modify-write), `StockService` (`crearItem`, `registrarMovimiento`, `stockDisponible`), `StockController`, `StockModule` wiring, e2e bootstrap on port 0. **No error filter or Zod pipe yet** — no test needs them.
+12. [x] **test: `POST /stock/movimientos` INGRESO → 201 and `GET /stock/:sku` → `stockDisponible`** (red: 404, the route doesn't exist) → minimum vertical that passes: `stock`/`movimiento_stock` ORM entities (`@Check` backstops, `sku text`), `TypeOrmStockRepository` (`buscar`/`crear`/`guardar` — the simplest single-request read-modify-write), `StockService` (`crearItem`, `registrarMovimiento`, `stockDisponible`), `StockController`, `StockModule` wiring, e2e bootstrap on port 0. **No error filter or Zod pipe yet** — no test needs them.
 
 **E2E increment cycles** (each: red → green → refactor → commit → review):
 
@@ -338,9 +338,9 @@ src/
 
 18. [ ] **`body inválido → 400`** (parametrized: `cantidad` 0/−1/1.5/`"3"`/`1e20`, unknown `motivo`, extra field, missing field; all `application/problem+json` with the right `type` and an `errors` member for Zod details) → forces `register-movement.schema.ts` (`z.strictObject`), `ZodValidationPipe`, and the value-object errors → 400 mapping. (zod itself landed in step 6 for env validation.)
 
-19. [ ] **`concurrencia: 20 COMPRA 1 sobre stock 5`** → exactly 5×201 + 15×409, final `disponible` 0 → forces the atomic conditional `UPDATE … WHERE disponible + :delta >= 0` (0 rows → `StockInsuficienteError`) and the SQLite mutex. The interim read-modify-write from step 12 is knowingly racy until this cycle; this red test is what justifies the adapter's atomic write.
+19. [ ] **`concurrencia: 20 COMPRA 1 sobre stock 5`** → exactly 5×201 + 15×409, final `cantidadDisponible` 0 → forces the atomic conditional `UPDATE … WHERE cantidad_disponible + :delta >= 0` (0 rows → `StockInsuficienteError`) and the SQLite mutex. The interim read-modify-write from step 12 is knowingly racy until this cycle; this red test is what justifies the adapter's atomic write.
 
-20. [ ] **`invariante: SUM(delta) == disponible`** per SKU (SQL check inside the spec).
+20. [ ] **`invariante: SUM(delta) == cantidad_disponible`** per SKU (SQL check inside the spec).
 
 21. [ ] **Postgres only** (`DB_TYPE=postgres`): `INGRESO 3_000_000_000` → 400, not 500 → forces `22003` → `CantidadInvalidaError` translation in the adapter.
 
