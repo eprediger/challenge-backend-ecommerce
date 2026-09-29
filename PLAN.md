@@ -328,7 +328,7 @@ src/
 
 13. [ ] **`un request emite un wide event`** — spec captures stdout and asserts exactly one JSON event per request carrying `requestId`, `method`, `path`, `statusCode`, `durationMs`, env context (`service`, `version`, `commitHash`, `instanceId`), `sku`, `cantidad`, `motivo` and the outcome (`result` or `error`) → `WideEventInterceptor` that emits once on success or failure + an `AsyncLocalStorage` context (`node:async_hooks`, stdlib) the service and interceptor enrich. `JSON.stringify` to stdout — no logging library for one write per request.
 
-14. [ ] **`GET /docs sirve Swagger UI`** (smoke spec: `/docs` → 200, `/openapi.yaml` → 200 with the contract text) → `npm i swagger-ui-express` (exact pin); wired in `main.ts` — the yaml is read from `process.cwd()/docs/openapi.yaml` and served raw via `swaggerOptions.url`, no yaml parser.
+14. [x] **`GET /docs sirve Swagger UI`** → `swagger-ui-express@5.0.1` (exact pin); wired in `main.ts` — the yaml is served raw from `docs/openapi.yaml` via `swaggerOptions.url`, no yaml parser. No smoke spec: asserting `/docs` returns HTML would test `swagger-ui-express` itself, not our code.
 
 15. [ ] **`una COMPRA descuenta stock`** (+ `GET` confirms): likely green on arrival — committed as spec coverage.
 

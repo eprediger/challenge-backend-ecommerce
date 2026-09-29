@@ -13,9 +13,14 @@ info:
     El miembro `instance` lleva el `requestId` del request, que también aparece
     en el evento estructurado que el servicio emite por stdout.
 
+tags:
+  - name: stock
+    description: Stock disponible por variante y su historial de movimientos.
+
 paths:
   /stock/movimientos:
     post:
+      tags: [stock]
       summary: Registrar un movimiento de stock
       description: |
         Registra `cantidad` unidades sobre la variante `sku`, con el signo que
@@ -126,6 +131,7 @@ paths:
 
   /stock/{sku}:
     get:
+      tags: [stock]
       summary: Consultar el stock disponible de una variante
       parameters:
         - name: sku
