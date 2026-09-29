@@ -373,7 +373,7 @@ src/
 
 ## Open items (handoff)
 - [x] **Commit pending work:** `PLAN.md` and `docker-compose.yml` committed — `4c6c5b2 chore:` (app service + `127.0.0.1` port binding), `f43ce2c docs:` (this plan).
-- [ ] **Mermaid on GitHub:** `StockAgg["Stock"]` alias renders on Devin Desktop; verify it survives GitHub's renderer after pushing. Fallback if it doesn't: a distinct namespace name.
+- [x] **Mermaid on GitHub:** `StockAgg["Stock"]` alias verified — renders correctly on GitHub's renderer (confirmed after push).
 - [ ] **Start implementation** at step 2 (`npm audit fix`) → step 3 (test runner + sanity spec) → step 4 (OpenAPI contract) → step 5 (first domain cycle: `Sku`). Per the TDD protocol: red → green → refactor → commit → **stop for review** before each next spec.
 - [ ] **Deferred to the wide-event cycle (step 13):** `requestId` source (read inbound header vs generate `randomUUID()` when absent) and `instanceId` value (hostname/PID) are not pinned — decide then.
 - [ ] **`ponytail:` deferral in the plan:** no tail sampling in the wide event (decision bullet). Harvest if it grows.
