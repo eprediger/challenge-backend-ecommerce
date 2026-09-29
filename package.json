@@ -10,6 +10,7 @@
     "start:dev": "nest start --watch",
     "start:prod": "node dist/main",
     "build": "nest build",
+    "test": "DB_DATABASE=${DB_DATABASE:-:memory:} node --require ts-node/register --test \"src/**/*.spec.ts\"",
     "lint": "eslint \"{src,test}/**/*.ts\"",
     "typecheck": "tsc --noEmit",
     "migration:generate": "typeorm-ts-node-commonjs migration:generate -d src/data-source.ts",
