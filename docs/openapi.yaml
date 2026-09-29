@@ -1,0 +1,252 @@
+openapi: 3.1.0
+info:
+  title: Ecommerce Challenge API
+  version: 1.0.0
+  description: |
+    Backend del challenge: catálogo de productos y control de stock.
+
+    El único endpoint que muta estado es `POST /stock/movimientos`: registra un
+    movimiento de stock (entrada o salida según el `motivo`) sobre la variante
+    identificada por `sku` y devuelve el stock disponible resultante.
+
+    Todas las respuestas de error siguen RFC 9457 (`application/problem+json`).
+    El miembro `instance` lleva el `requestId` del request, que también aparece
+    en el evento estructurado que el servicio emite por stdout.
+
+paths:
+  /stock/movimientos:
+    post:
+      summary: Registrar un movimiento de stock
+      description: |
+        Registra `cantidad` unidades sobre la variante `sku`, con el signo que
+        indica `motivo` (ENTRADA: `INGRESO`, `DEVOLUCION`, `AJUSTE_POSITIVO`;
+        SALIDA: `COMPRA`, `AJUSTE_NEGATIVO`). Si la salida supera el stock
+        disponible, el movimiento se rechaza y no se registra nada.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegistrarMovimiento'
+            example:
+              sku: ZAP-RUNNER-42-NEGRO
+              cantidad: 2
+              motivo: COMPRA
+      responses:
+        '201':
+          description: Movimiento registrado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MovimientoRegistrado'
+              example:
+                id: 3f6f3d70-7b3d-4f1e-9c3e-2f0b9d2a1c44
+                sku: ZAP-RUNNER-42-NEGRO
+                cantidad: 2
+                motivo: COMPRA
+                fecha: '2026-09-29T15:04:05.321Z'
+                stockDisponible: 8
+        '400':
+          description: |
+            Body inválido. `type` distingue el origen:
+            `urn:problem:validacion` (la forma no cumple el esquema; el detalle
+            está en `errors`), `urn:problem:cantidad-invalida` o
+            `urn:problem:sku-invalido` (reglas de los objetos de dominio).
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              examples:
+                formaInvalida:
+                  summary: La forma del body no cumple el esquema
+                  value:
+                    type: urn:problem:validacion
+                    title: Body inválido
+                    status: 400
+                    detail: El body no cumple el esquema esperado
+                    instance: 9b8a7c6d-1111-4000-8000-0000000000aa
+                    errors:
+                      - path: motivo
+                        message: "Invalid enum value. Expected 'INGRESO' | 'DEVOLUCION' | 'COMPRA' | 'AJUSTE_POSITIVO' | 'AJUSTE_NEGATIVO'"
+                cantidadInvalida:
+                  summary: Regla de dominio sobre cantidad
+                  value:
+                    type: urn:problem:cantidad-invalida
+                    title: Cantidad inválida
+                    status: 400
+                    detail: 'La cantidad debe ser un entero positivo: 0'
+                    instance: 9b8a7c6d-1111-4000-8000-0000000000ab
+                skuInvalido:
+                  summary: Regla de dominio sobre sku
+                  value:
+                    type: urn:problem:sku-invalido
+                    title: SKU inválido
+                    status: 400
+                    detail: 'El SKU no puede estar vacío: "   "'
+                    instance: 9b8a7c6d-1111-4000-8000-0000000000ac
+        '404':
+          description: No existe una variante con ese SKU.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                type: urn:problem:variante-no-encontrada
+                title: Variante no encontrada
+                status: 404
+                detail: 'No existe stock para el SKU: NO-EXISTE'
+                instance: 9b8a7c6d-1111-4000-8000-0000000000ad
+        '409':
+          description: |
+            La salida supera el stock disponible. No se registró ningún
+            movimiento. `stockDisponible` informa el stock actual.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemStockInsuficiente'
+              example:
+                type: urn:problem:stock-insuficiente
+                title: Stock insuficiente
+                status: 409
+                detail: 'Stock insuficiente para el SKU ZAP-RUNNER-42-NEGRO: quedan 1'
+                instance: 9b8f7c6d-1111-4000-8000-0000000000ae
+                stockDisponible: 1
+        '500':
+          description: Error inesperado.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                type: about:blank
+                title: Internal Server Error
+                status: 500
+                detail: Error interno
+                instance: 9b8f7c6d-1111-4000-8000-0000000000af
+
+  /stock/{sku}:
+    get:
+      summary: Consultar el stock disponible de una variante
+      parameters:
+        - name: sku
+          in: path
+          required: true
+          schema:
+            type: string
+          example: ZAP-RUNNER-42-NEGRO
+      responses:
+        '200':
+          description: Stock disponible actual.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockDisponible'
+              example:
+                sku: ZAP-RUNNER-42-NEGRO
+                stockDisponible: 8
+        '404':
+          description: No existe una variante con ese SKU.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                type: urn:problem:variante-no-encontrada
+                title: Variante no encontrada
+                status: 404
+                detail: 'No existe stock para el SKU: NO-EXISTE'
+                instance: 9b8f7c6d-1111-4000-8000-0000000000b0
+
+components:
+  schemas:
+    Motivo:
+      type: string
+      enum: [INGRESO, DEVOLUCION, COMPRA, AJUSTE_POSITIVO, AJUSTE_NEGATIVO]
+      description: |
+        Motivo del movimiento. INGRESO: reposición de proveedor.
+        DEVOLUCION: devolución de cliente. COMPRA: compra de cliente.
+        AJUSTE_POSITIVO / AJUSTE_NEGATIVO: ajustes manuales.
+
+    RegistrarMovimiento:
+      type: object
+      additionalProperties: false
+      required: [sku, cantidad, motivo]
+      properties:
+        sku:
+          type: string
+          description: SKU de la variante afectada.
+        cantidad:
+          type: integer
+          description: Entero positivo (safe integer). El signo lo pone el motivo.
+          minimum: 1
+        motivo:
+          $ref: '#/components/schemas/Motivo'
+
+    MovimientoRegistrado:
+      type: object
+      required: [id, sku, cantidad, motivo, fecha, stockDisponible]
+      properties:
+        id:
+          type: string
+          format: uuid
+        sku:
+          type: string
+        cantidad:
+          type: integer
+        motivo:
+          $ref: '#/components/schemas/Motivo'
+        fecha:
+          type: string
+          format: date-time
+        stockDisponible:
+          type: integer
+          description: Stock disponible del SKU después de aplicar el movimiento.
+
+    StockDisponible:
+      type: object
+      required: [sku, stockDisponible]
+      properties:
+        sku:
+          type: string
+        stockDisponible:
+          type: integer
+          minimum: 0
+
+    Problem:
+      type: object
+      description: RFC 9457 problem details.
+      required: [type, title, status, detail, instance]
+      properties:
+        type:
+          type: string
+          format: uri
+          description: 'urn:problem:<slug> identifica el tipo de error; about:blank es un error inesperado.'
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+          format: uuid
+          description: requestId del request; correlaciona con el evento estructurado en stdout.
+        errors:
+          type: array
+          description: Solo en urn:problem:validacion — detalle por campo.
+          items:
+            type: object
+            properties:
+              path:
+                type: string
+              message:
+                type: string
+
+    ProblemStockInsuficiente:
+      allOf:
+        - $ref: '#/components/schemas/Problem'
+        - type: object
+          properties:
+            stockDisponible:
+              type: integer
+              description: Stock disponible actual del SKU.
