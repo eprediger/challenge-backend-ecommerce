@@ -307,7 +307,7 @@ src/
 
 6. [x] **DB config + declared env:** spec asserts `dataSourceOptions(env)` → sqlite/postgres per `DbConfig`, and `loadEnv({DB_TYPE:'mysql'})` throws → then `src/env.ts` (Zod schema declares+validates every env var, `z.infer` `Env`, `loadEnv(source)` explicit; `npm i zod@4.6.5 --save-exact` lands here, ahead of step 18), `src/data-source.ts` (`dataSourceOptions(env: DbConfig)` — explicit param, no `process.env` default; entities/migrations globs from `__dirname`; `AppDataSource` with `synchronize: false`, CLI-only), `app.module.ts` (keeps the scaffold's `ConfigModule.forRoot` — now with `validate: loadEnv` — and `forRootAsync` factory reading typed keys off `ConfigService<Env, true>`), `main.ts` (drop `useGlobalPipes` — validation arrives with the Zod pipe in step 18; `PORT` via `app.get(ConfigService)`), `npm uninstall class-validator class-transformer`, rename `catalog/` → `catalogo/`.
 
-7. [ ] **`Cantidad` VO:** rejects 0, −1, 1.5, `1e20`; accepts `Number.MAX_SAFE_INTEGER` → `Cantidad` + `CantidadInvalidaError`.
+7. [x] **`Cantidad` VO:** rejects 0, −1, 1.5, `1e20`; accepts `Number.MAX_SAFE_INTEGER` → `Cantidad` + `CantidadInvalidaError`.
 
 8. [ ] **`un INGRESO aumenta el stock disponible`:** forces `Motivo`/`Direccion` (`direccion()`), `Stock.crear(sku)` and `Stock.registrar()`, which updates `disponible` and returns a `Movimiento` with a `randomUUID()` id and the given `fecha`.
 
