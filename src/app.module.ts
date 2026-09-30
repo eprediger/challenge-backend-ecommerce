@@ -1,10 +1,12 @@
 import { Module, type MiddlewareConsumer, type NestModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { APP_FILTER } from '@nestjs/core';
 import { TypeOrmModule, type TypeOrmModuleOptions } from '@nestjs/typeorm';
 import { AppController } from './app.controller';
 import { CatalogoModule } from './catalogo/catalogo.module';
 import { dataSourceOptions } from './data-source';
 import { loadEnv, type Env } from './env';
+import { DomainErrorFilter } from './shared/infrastructure/http/domain-error.filter';
 import { wideEventMiddleware } from './shared/infrastructure/http/wide-event.middleware';
 import { StockModule } from './stock/stock.module';
 
@@ -31,6 +33,10 @@ import { StockModule } from './stock/stock.module';
     StockModule,
   ],
   controllers: [AppController],
+  // The error boundary is app-wide, so it is registered here, not in a
+  // feature module — Catalogo's errors join the map when it grows a
+  // domain.
+  providers: [{ provide: APP_FILTER, useClass: DomainErrorFilter }],
 })
 export class AppModule implements NestModule {
   constructor(private readonly config: ConfigService<Env, true>) {}

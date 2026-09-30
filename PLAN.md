@@ -150,9 +150,11 @@ classDiagram
 The movement is rejected with **409**, nothing is recorded, and the body is a problem detail (`urn:problem:stock-insuficiente`) with `stockDisponible` as an extension member. No exception for `AJUSTE_NEGATIVO`: stock never goes negative.
 
 ### Domain errors → HTTP (mapped only in the HTTP adapter)
+The filter keeps a `ErrorClass → status` map; `type` is derived (`urn:problem:` + the kebab-cased class name minus `Error`) and `title`/`detail` come from the error's own `summary`/`message` (domain-neutral attributes — RFC 9457 vocabulary stays in the adapter), so a new domain error needs one map line plus its `summary` field. The only extension-member special case is `StockInsuficienteError.cantidadDisponible` → `stockDisponible`.
+
 | error | `type` (`urn:problem:*`) | raised by | HTTP |
 |---|---|---|---|
-| `CantidadInvalidaError` / `SkuInvalidoError` / `MotivoInvalidoError` | `cantidad-invalida` / `sku-invalido` / `validacion` | value objects and `Motivo.desde` (already caught earlier by the Zod enum; the error guards the domain boundary); `CantidadInvalidaError` also by the adapter (Postgres `22003` integer out of range) | 400 |
+| `CantidadInvalidaError` / `SkuInvalidoError` / `MotivoInvalidoError` | `cantidad-invalida` / `sku-invalido` / `motivo-invalido` (derived) | value objects and `Motivo.desde` (already caught earlier by the Zod enum; the error guards the domain boundary); `CantidadInvalidaError` also by the adapter (Postgres `22003` integer out of range) | 400 |
 | *(Zod shape error)* | `validacion` | `ZodValidationPipe` | 400 |
 | `VarianteNoEncontradaError` | `variante-no-encontrada` | application service (no `Stock` for the SKU) | 404 |
 | `StockInsuficienteError` | `stock-insuficiente` | `Stock.registrar()` or the adapter (lost race) | 409 |
@@ -235,6 +237,7 @@ src/
   shared/infrastructure/http/zod-validation.pipe.ts
   shared/infrastructure/http/wide-event.middleware.ts    one JSON event per request
   shared/infrastructure/http/request-context.ts          AsyncLocalStorage store; enrichWideEvent()
+  shared/infrastructure/http/domain-error.filter.ts      catches all errors → RFC 9457 problem+json (400/404/409/500); registered in app.module.ts — app-wide boundary, not a stock concern
   catalogo/
     catalogo.module.ts
     infrastructure/persistence/{categoria,producto,variante,atributo-variante}.orm-entity.ts
@@ -258,7 +261,6 @@ src/
       persistence/typeorm-stock.repository.ts   conditional UPDATE + SQLite mutex + 22003 translation + mappers
       http/stock.controller.ts
       http/register-movement.schema.ts          Zod schema + z.infer type
-      http/domain-error.filter.ts               catches all errors → RFC 9457 problem+json (400/404/409/500)
 ```
 
 ## Decision record: Catalogo scope
@@ -333,7 +335,7 @@ src/
 
 15. [x] **`una COMPRA descuenta stock`** (+ `GET` confirms): green on arrival — committed as spec coverage.
 
-16. [ ] **`una COMPRA mayor al disponible → 409`,** the problem detail carries `stockDisponible` as an extension member, `SUM(delta)` unchanged → forces `DomainErrorFilter` (`StockInsuficienteError` → 409, `application/problem+json`).
+16. [x] **`una COMPRA mayor al disponible → 409`,** the problem detail carries `stockDisponible` as an extension member, `SUM(delta)` unchanged → `DomainErrorFilter` (full mapping table landed: 409 + `stockDisponible` extension; 404, 400s, `about:blank` for framework/unknown errors; `instance` = requestId from the ALS context; the error enriches the wide event). Registered via `APP_FILTER` so specs booting without `main.ts` get it.
 
 17. [ ] **`SKU desconocido → 404`** (POST and GET, incl. a 200-char SKU) → `VarianteNoEncontradaError` → 404 in the filter.
 

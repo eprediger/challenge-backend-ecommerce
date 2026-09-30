@@ -9,6 +9,8 @@
  * cases and clients see one domain error, not an infrastructure one.
  */
 export class CantidadInvalidaError extends Error {
+  readonly summary = 'Cantidad inválida';
+
   constructor(valor: number) {
     super(`La cantidad debe ser un entero positivo: ${valor}`);
     this.name = 'CantidadInvalidaError';

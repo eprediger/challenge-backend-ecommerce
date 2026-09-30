@@ -139,6 +139,43 @@ describe('POST /stock/movimientos y GET /stock/:sku', () => {
     assert.deepEqual(stock, { sku: 'ZAP-40-BLA', stockDisponible: 7 });
   });
 
+  it('una COMPRA mayor al disponible → 409 con problem detail', async () => {
+    await crearVarianteConStock(app, 'ZAP-41-ROJ');
+    await app
+      .get(StockService)
+      .registrarMovimiento(
+        new Sku('ZAP-41-ROJ'),
+        new Cantidad(5),
+        Motivo.INGRESO,
+      );
+
+    const response = await postMovimiento(baseUrl, {
+      sku: 'ZAP-41-ROJ',
+      cantidad: 10,
+      motivo: 'COMPRA',
+    });
+
+    assert.equal(response.status, 409);
+    assert.match(
+      response.headers.get('content-type') ?? '',
+      /application\/problem\+json/,
+    );
+    const problem = (await response.json()) as Record<string, unknown>;
+    assert.equal(problem.type, 'urn:problem:stock-insuficiente');
+    assert.equal(problem.title, 'Stock insuficiente');
+    assert.equal(problem.status, 409);
+    assert.equal(typeof problem.detail, 'string');
+    assert.equal(typeof problem.instance, 'string');
+    assert.equal(problem.stockDisponible, 5);
+
+    const [{ total }] = await app
+      .get(DataSource)
+      .query<[{ total: number }]>(
+        "SELECT COALESCE(SUM(delta), 0) AS total FROM movimiento_stock WHERE sku = 'ZAP-41-ROJ'",
+      );
+    assert.equal(Number(total), 5);
+  });
+
   it('un request emite un wide event', async () => {
     await crearVarianteConStock(app, 'REM-001');
     const requestId = randomUUID();

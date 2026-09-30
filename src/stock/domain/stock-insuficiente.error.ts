@@ -8,6 +8,8 @@ import type { Cantidad } from './cantidad';
  * detail.
  */
 export class StockInsuficienteError extends Error {
+  readonly summary = 'Stock insuficiente';
+
   /**
    * The units on hand when the movement was rejected.
    */
