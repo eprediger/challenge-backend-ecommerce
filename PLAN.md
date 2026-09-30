@@ -354,7 +354,7 @@ Dockerfile                        node:22-slim + sqlite3 CLI (seed: docker compo
 
 23. [x] **feat: seed.** `database/seed.sql` — raw portable SQL, no script, no npm entry: seed data is static and trusted, so the native CLIs are the runner. `docker compose exec -T app sqlite3 database.sqlite < database/seed.sql` for sqlite, `docker compose exec -T postgres psql -U postgres -d ecommerce_challenge < database/seed.sql` for postgres (`psql` ships in the postgres image; the app image gains `sqlite3` via a 3-line `Dockerfile` on `node:22-slim`, compose switches to `build: .`). Categoria "Calzado", producto "Zapatilla Runner" ($1.299,90 ARS) with 3 variantes (`talle`/`color` attribute rows), `stock` + `movimiento_stock` rows consistent with the SUM(delta) invariant (the zero-stock variante has no movement). Literal UUIDs + `ON CONFLICT DO NOTHING` make re-runs no-ops on both engines; deterministic `seed-ingreso-<sku>` idempotency keys. Requires an existing schema (app's `synchronize` or `schema:sync` first). Verified on both engines, not by a spec.
 
-24. [ ] **docs: solution write-up (Spanish) in README.** New `## Solución` section after the statement:
+24. [x] **docs: solution write-up (Spanish) in README.** New `## Solución` section after the statement:
     - the Mermaid domain diagram, the two contexts, reasons table, rules
     - the Mermaid E-R diagram of the SQL model (six tables, PK/FK/UK/CHECK annotated; the variante–stock link drawn as non-identifying — `|o..o|` — since it's a logical link by `sku`, not a constraint)
     - application flow and concurrency strategy
