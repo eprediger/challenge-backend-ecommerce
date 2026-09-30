@@ -366,13 +366,13 @@ Dockerfile                        node:22-slim + sqlite3 CLI (seed: docker compo
     - also fix the starter's docs: `docker compose up -d postgres` (plain `up` now starts the app too) and `DB_HOST=postgres` when the app runs in the container
 
 ## Verification
-- [ ] `docker compose run --rm app npm run typecheck`
-- [ ] `docker compose run --rm app npm run lint`
-- [ ] `docker compose run --rm app npm test` (domain spec + e2e on SQLite in-memory)
-- [ ] `docker compose up -d postgres && docker compose run --rm -e DB_TYPE=postgres -e DB_HOST=postgres -e DB_DATABASE=ecommerce_challenge app npm test` (real contention)
-- [ ] `docker compose run --rm app npm run build`
-- [ ] `docker compose exec -T app sqlite3 database.sqlite < database/seed.sql` (or the psql variant), `docker compose up app`, then curl `POST /stock/movimientos` (201 / 409 / 404 / 400), `GET /stock/:sku`, and open `/docs` (Swagger UI over the contract)
-- [ ] `git log --oneline` reads as the story above
+- [x] `docker compose exec -T app npm run typecheck` — clean
+- [x] `docker compose exec -T app npm run lint` — clean
+- [x] `docker compose exec -T app npm test` (domain spec + e2e on SQLite in-memory) — 47 pass, 1 skip (pg-only spec)
+- [x] `docker compose exec -T -e DB_TYPE=postgres -e DB_HOST=postgres -e DB_PORT=5432 -e DB_USERNAME=postgres -e DB_PASSWORD=postgres -e DB_DATABASE=ecommerce_challenge app npm test` (real contention) — 48 pass; note: wipe `public` schema first if the dev DB has seed rows (the suite drops schema only *between* specs)
+- [x] `docker compose exec -T app npm run build` — clean
+- [x] Seed applied on both engines via native CLIs; curl verified 201 / replay / 422 / 409 / 404 / 400; `/docs` serves Swagger UI
+- [x] `git log --oneline` reads as the story above
 
 ## Risks / considerations
 - **SQLite concurrency test** proves the logic, not true parallelism. The Postgres run is the real proof, and the docs say so.
