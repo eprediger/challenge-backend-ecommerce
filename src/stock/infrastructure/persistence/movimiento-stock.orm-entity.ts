@@ -30,7 +30,10 @@ export class MovimientoStockOrmEntity {
   })
   motivo!: string;
 
-  @Column({ type: 'datetime' })
+  // No explicit type — the reflected Date maps to the driver's
+  // datetime flavour (`datetime` on sqlite, `timestamp` on
+  // postgres); neither literal type is portable.
+  @Column()
   fecha!: Date;
 
   /** Same `sku` column; the relation adds the real FK to `stock`. */

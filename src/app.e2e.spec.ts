@@ -326,6 +326,32 @@ describe('POST /stock/movimientos y GET /stock/:sku', () => {
     }
   });
 
+  it(
+    'INGRESO 3_000_000_000 → 400 cantidad-invalida (postgres)',
+    { skip: process.env.DB_TYPE !== 'postgres' },
+    async () => {
+      await crearVarianteConItem(app, 'ZAP-BIG');
+      await app
+        .get(StockService)
+        .registrarMovimiento(
+          new Sku('ZAP-BIG'),
+          new Cantidad(1),
+          Motivo.INGRESO,
+        );
+
+      const response = await postMovimiento(baseUrl, {
+        sku: 'ZAP-BIG',
+        cantidad: 3_000_000_000,
+        motivo: 'INGRESO',
+      });
+
+      assert.equal(response.status, 400);
+      const problem = (await response.json()) as Record<string, unknown>;
+      assert.equal(problem.type, 'urn:problem:cantidad-invalida');
+      assert.equal(problem.status, 400);
+    },
+  );
+
   it('un SKU desconocido → 404 problem detail en POST', async () => {
     const response = await postMovimiento(baseUrl, {
       sku: 'NO-EXISTE',

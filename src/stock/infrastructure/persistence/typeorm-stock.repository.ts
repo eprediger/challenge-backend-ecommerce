@@ -1,8 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
-import { DataSource } from 'typeorm';
+import { DataSource, QueryFailedError } from 'typeorm';
 import type { Sku } from '../../../shared/domain/sku';
 import {
+  CantidadInvalidaError,
   StockInsuficienteError,
   VarianteNoEncontradaError,
 } from '../../domain/errors';
@@ -49,41 +50,53 @@ export class TypeOrmStockRepository extends StockRepository {
    */
   async guardar(movimiento: Movimiento): Promise<void> {
     await this.serializado(async () => {
-      await this.dataSource.transaction(async (em) => {
-        const result = await em
-          .createQueryBuilder()
-          .update(StockOrmEntity)
-          .set({
-            cantidadDisponible: () =>
-              'cantidad_disponible + :delta',
-          })
-          .where('sku = :sku AND cantidad_disponible + :delta >= 0')
-          .setParameters({
+      try {
+        await this.dataSource.transaction(async (em) => {
+          const result = await em
+            .createQueryBuilder()
+            .update(StockOrmEntity)
+            .set({
+              cantidadDisponible: () =>
+                'cantidad_disponible + :delta',
+            })
+            .where('sku = :sku AND cantidad_disponible + :delta >= 0')
+            .setParameters({
+              sku: movimiento.sku.valor,
+              delta: movimiento.deltaConSigno(),
+            })
+            .execute();
+          if (result.affected === 0) {
+            const fila = await em
+              .getRepository(StockOrmEntity)
+              .findOneBy({ sku: movimiento.sku.valor });
+            if (fila === null) {
+              throw new VarianteNoEncontradaError(movimiento.sku);
+            }
+            throw new StockInsuficienteError(
+              movimiento.sku,
+              fila.cantidadDisponible,
+              movimiento.cantidad,
+            );
+          }
+          await em.insert(MovimientoStockOrmEntity, {
+            id: movimiento.id,
             sku: movimiento.sku.valor,
             delta: movimiento.deltaConSigno(),
-          })
-          .execute();
-        if (result.affected === 0) {
-          const fila = await em
-            .getRepository(StockOrmEntity)
-            .findOneBy({ sku: movimiento.sku.valor });
-          if (fila === null) {
-            throw new VarianteNoEncontradaError(movimiento.sku);
-          }
-          throw new StockInsuficienteError(
-            movimiento.sku,
-            fila.cantidadDisponible,
-            movimiento.cantidad,
-          );
-        }
-        await em.insert(MovimientoStockOrmEntity, {
-          id: movimiento.id,
-          sku: movimiento.sku.valor,
-          delta: movimiento.deltaConSigno(),
-          motivo: movimiento.motivo.clave,
-          fecha: movimiento.fecha,
+            motivo: movimiento.motivo.clave,
+            fecha: movimiento.fecha,
+          });
         });
-      });
+      } catch (error) {
+        // Postgres `22003` — a delta beyond int4 range is a domain
+        // invalid quantity, not an infrastructure failure.
+        if (
+          error instanceof QueryFailedError &&
+          (error.driverError as { code?: string }).code === '22003'
+        ) {
+          throw new CantidadInvalidaError(movimiento.cantidad.valor);
+        }
+        throw error;
+      }
     });
   }
 
