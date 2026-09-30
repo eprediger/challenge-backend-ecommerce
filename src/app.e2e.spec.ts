@@ -176,6 +176,37 @@ describe('POST /stock/movimientos y GET /stock/:sku', () => {
     assert.equal(Number(total), 5);
   });
 
+  it('un SKU desconocido → 404 problem detail en POST', async () => {
+    const response = await postMovimiento(baseUrl, {
+      sku: 'NO-EXISTE',
+      cantidad: 1,
+      motivo: 'COMPRA',
+    });
+
+    assert.equal(response.status, 404);
+    assert.match(
+      response.headers.get('content-type') ?? '',
+      /application\/problem\+json/,
+    );
+    const problem = (await response.json()) as Record<string, unknown>;
+    assert.equal(problem.type, 'urn:problem:variante-no-encontrada');
+    assert.equal(problem.title, 'Variante no encontrada');
+    assert.equal(problem.status, 404);
+    assert.equal(typeof problem.detail, 'string');
+    assert.equal(typeof problem.instance, 'string');
+  });
+
+  it('un SKU desconocido → 404 problem detail en GET (200 chars)', async () => {
+    const sku = 'SKU-LARGO-'.repeat(20);
+
+    const get = await fetch(`${baseUrl}/stock/${sku}`);
+
+    assert.equal(get.status, 404);
+    const problem = (await get.json()) as Record<string, unknown>;
+    assert.equal(problem.type, 'urn:problem:variante-no-encontrada');
+    assert.equal(problem.status, 404);
+  });
+
   it('un request emite un wide event', async () => {
     await crearVarianteConStock(app, 'REM-001');
     const requestId = randomUUID();

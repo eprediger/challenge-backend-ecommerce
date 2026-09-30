@@ -337,7 +337,7 @@ src/
 
 16. [x] **`una COMPRA mayor al disponible → 409`,** the problem detail carries `stockDisponible` as an extension member, `SUM(delta)` unchanged → `DomainErrorFilter` (full mapping table landed: 409 + `stockDisponible` extension; 404, 400s, `about:blank` for framework/unknown errors; `instance` = requestId from the ALS context; the error enriches the wide event). Registered via `APP_FILTER` so specs booting without `main.ts` get it.
 
-17. [ ] **`SKU desconocido → 404`** (POST and GET, incl. a 200-char SKU) → `VarianteNoEncontradaError` → 404 in the filter.
+17. [x] **`SKU desconocido → 404`** (POST and GET, incl. a 200-char SKU) → `VarianteNoEncontradaError` → 404 in the filter. Green on arrival — the step-16 filter already mapped it.
 
 18. [ ] **`body inválido → 400`** (parametrized: `cantidad` 0/−1/1.5/`"3"`/`1e20`, unknown `motivo`, extra field, missing field; all `application/problem+json` with the right `type` and an `errors` member for Zod details) → forces `register-movement.schema.ts` (`z.strictObject`), `ZodValidationPipe`, and the value-object errors → 400 mapping. (zod itself landed in step 6 for env validation.)
 
