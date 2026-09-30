@@ -64,7 +64,7 @@ export class TypeOrmStockRepository extends StockRepository {
     return this.serialized(async () => {
       try {
         await this.dataSource.transaction(async (em) => {
-          const result = await em
+          const update = await em
             .createQueryBuilder()
             .update(StockOrmEntity)
             .set({
@@ -77,7 +77,7 @@ export class TypeOrmStockRepository extends StockRepository {
               delta: movimiento.signedDelta(),
             })
             .execute();
-          if (result.affected === 0) {
+          if (update.affected === 0) {
             const row = await em
               .getRepository(StockOrmEntity)
               .findOneBy({ sku: movimiento.sku.valor });
@@ -134,11 +134,11 @@ export class TypeOrmStockRepository extends StockRepository {
    * Rehydrates from the ledger row — `Cantidad` is `|delta|`.
    */
   async findMovimiento(
-    code: string,
+    idempotencyKey: string,
   ): Promise<Movimiento | null> {
     const row = await this.dataSource
       .getRepository(MovimientoStockOrmEntity)
-      .findOneBy({ idempotencyKey: code });
+      .findOneBy({ idempotencyKey });
     if (row === null) {
       return null;
     }

@@ -37,15 +37,15 @@ export class StockController {
     @Body() body: RegistrarMovimientoBody,
     @Headers('idempotency-key') idempotencyKey?: string,
   ): Promise<unknown> {
-    const code = idempotencyKey?.trim();
-    if (!code) {
+    const key = idempotencyKey?.trim();
+    if (!key) {
       throw new ClaveIdempotenciaRequeridaError();
     }
     const movimiento = await this.stockService.registrarMovimiento(
       new Sku(body.sku),
       new Cantidad(body.cantidad),
       Motivo.from(body.motivo),
-      code,
+      key,
     );
     return {
       id: movimiento.id,

@@ -123,9 +123,9 @@ describe('POST /stock/movimientos y GET /stock/:sku', () => {
     assert.equal(movimiento.motivo, 'INGRESO');
     assert.ok(movimiento.fecha);
 
-    const get = await fetch(`${baseUrl}/stock/ZAP-42-NEG`);
-    assert.equal(get.status, 200);
-    const stock = (await get.json()) as StockResponse;
+    const stockResponse = await fetch(`${baseUrl}/stock/ZAP-42-NEG`);
+    assert.equal(stockResponse.status, 200);
+    const stock = (await stockResponse.json()) as StockResponse;
     assert.deepEqual(stock, { sku: 'ZAP-42-NEG', stockDisponible: 5 });
   });
 
@@ -150,8 +150,8 @@ describe('POST /stock/movimientos y GET /stock/:sku', () => {
     const movimiento = (await response.json()) as MovimientoResponse;
     assert.equal(movimiento.motivo, 'COMPRA');
 
-    const get = await fetch(`${baseUrl}/stock/ZAP-40-BLA`);
-    const stock = (await get.json()) as StockResponse;
+    const stockResponse = await fetch(`${baseUrl}/stock/ZAP-40-BLA`);
+    const stock = (await stockResponse.json()) as StockResponse;
     assert.deepEqual(stock, { sku: 'ZAP-40-BLA', stockDisponible: 7 });
   });
 
@@ -226,8 +226,8 @@ describe('POST /stock/movimientos y GET /stock/:sku', () => {
       `expected 15 losers, got: ${statuses.join(',')}`,
     );
 
-    const get = await fetch(`${baseUrl}/stock/ZAP-CONC`);
-    const stock = (await get.json()) as StockResponse;
+    const stockResponse = await fetch(`${baseUrl}/stock/ZAP-CONC`);
+    const stock = (await stockResponse.json()) as StockResponse;
     assert.equal(stock.stockDisponible, 0);
 
     // The ledger must agree: losers wrote no movement.
@@ -276,8 +276,8 @@ describe('POST /stock/movimientos y GET /stock/:sku', () => {
       `expected all to win, got: ${statuses.join(',')}`,
     );
 
-    const get = await fetch(`${baseUrl}/stock/ZAP-MIX`);
-    const stock = (await get.json()) as StockResponse;
+    const stockResponse = await fetch(`${baseUrl}/stock/ZAP-MIX`);
+    const stock = (await stockResponse.json()) as StockResponse;
     assert.equal(stock.stockDisponible, 30);
 
     const [{ total }] = await app
@@ -291,16 +291,16 @@ describe('POST /stock/movimientos y GET /stock/:sku', () => {
   it('invariante: SUM(delta) == cantidad_disponible por SKU', async () => {
     await createVarianteConItem(app, 'INV-A');
     await createVarianteConItem(app, 'INV-B');
-    const posts = [
-      { sku: 'INV-A', cantidad: 10, motivo: 'INGRESO', expected: 201 },
-      { sku: 'INV-A', cantidad: 3, motivo: 'COMPRA', expected: 201 },
-      { sku: 'INV-A', cantidad: 2, motivo: 'DEVOLUCION', expected: 201 },
+    const requests = [
+      { sku: 'INV-A', cantidad: 10, motivo: 'INGRESO', expectedStatus: 201 },
+      { sku: 'INV-A', cantidad: 3, motivo: 'COMPRA', expectedStatus: 201 },
+      { sku: 'INV-A', cantidad: 2, motivo: 'DEVOLUCION', expectedStatus: 201 },
       // The rejected COMPRA must not enter the ledger either.
-      { sku: 'INV-A', cantidad: 99, motivo: 'COMPRA', expected: 409 },
-      { sku: 'INV-B', cantidad: 4, motivo: 'INGRESO', expected: 201 },
-      { sku: 'INV-B', cantidad: 4, motivo: 'AJUSTE_NEGATIVO', expected: 201 },
+      { sku: 'INV-A', cantidad: 99, motivo: 'COMPRA', expectedStatus: 409 },
+      { sku: 'INV-B', cantidad: 4, motivo: 'INGRESO', expectedStatus: 201 },
+      { sku: 'INV-B', cantidad: 4, motivo: 'AJUSTE_NEGATIVO', expectedStatus: 201 },
     ] as const;
-    for (const { sku, cantidad, motivo, expected } of posts) {
+    for (const { sku, cantidad, motivo, expectedStatus } of requests) {
       const response = await postMovimiento(baseUrl, {
         sku,
         cantidad,
@@ -308,12 +308,12 @@ describe('POST /stock/movimientos y GET /stock/:sku', () => {
       });
       assert.equal(
         response.status,
-        expected,
+        expectedStatus,
         `${motivo} ${cantidad} ${sku}`,
       );
     }
 
-    const rows = await app
+    const stockLedgerRows = await app
       .get(DataSource)
       .query<Array<{ sku: string; cantidad_disponible: number; total: number }>>(
         `SELECT s.sku, s.cantidad_disponible, COALESCE(SUM(m.delta), 0) AS total
@@ -321,8 +321,8 @@ describe('POST /stock/movimientos y GET /stock/:sku', () => {
          GROUP BY s.sku`,
       );
 
-    assert.equal(rows.length, 2);
-    for (const row of rows) {
+    assert.equal(stockLedgerRows.length, 2);
+    for (const row of stockLedgerRows) {
       assert.equal(
         Number(row.cantidad_disponible),
         Number(row.total),
@@ -344,18 +344,18 @@ describe('POST /stock/movimientos y GET /stock/:sku', () => {
 
     const body = { sku: 'ZAP-IDEM', cantidad: 3, motivo: 'COMPRA' };
     const headers = { 'idempotency-key': 'retry-abc-123' };
-    const first = await postMovimiento(baseUrl, body, headers);
-    const second = await postMovimiento(baseUrl, body, headers);
+    const originalResponse = await postMovimiento(baseUrl, body, headers);
+    const replayResponse = await postMovimiento(baseUrl, body, headers);
 
-    assert.equal(first.status, 201);
-    assert.equal(second.status, 201);
-    const original = (await first.json()) as MovimientoResponse;
-    const replayed = (await second.json()) as MovimientoResponse;
-    assert.deepEqual(replayed, original);
-    assert.equal(original.cantidad, 3);
+    assert.equal(originalResponse.status, 201);
+    assert.equal(replayResponse.status, 201);
+    const originalMovement = (await originalResponse.json()) as MovimientoResponse;
+    const replayedMovement = (await replayResponse.json()) as MovimientoResponse;
+    assert.deepEqual(replayedMovement, originalMovement);
+    assert.equal(originalMovement.cantidad, 3);
 
-    const get = await fetch(`${baseUrl}/stock/ZAP-IDEM`);
-    const stock = (await get.json()) as StockResponse;
+    const stockResponse = await fetch(`${baseUrl}/stock/ZAP-IDEM`);
+    const stock = (await stockResponse.json()) as StockResponse;
     assert.equal(stock.stockDisponible, 7);
 
     const [{ total }] = await app
@@ -387,16 +387,16 @@ describe('POST /stock/movimientos y GET /stock/:sku', () => {
       ),
     );
 
-    const bodies = (await Promise.all(
+    const movements = (await Promise.all(
       responses.map((r) => r.json()),
     )) as MovimientoResponse[];
-    for (const b of bodies) {
-      assert.equal(bodies[0]!.id, b.id);
-      assert.equal(b.cantidad, 4);
+    for (const movement of movements) {
+      assert.equal(movements[0]!.id, movement.id);
+      assert.equal(movement.cantidad, 4);
     }
 
-    const get = await fetch(`${baseUrl}/stock/ZAP-IDEM-CONC`);
-    const stock = (await get.json()) as StockResponse;
+    const stockResponse = await fetch(`${baseUrl}/stock/ZAP-IDEM-CONC`);
+    const stock = (await stockResponse.json()) as StockResponse;
     assert.equal(stock.stockDisponible, 6);
   });
 
@@ -412,25 +412,25 @@ describe('POST /stock/movimientos y GET /stock/:sku', () => {
       );
 
     const headers = { 'idempotency-key': 'retry-conflict-1' };
-    const first = await postMovimiento(
+    const originalResponse = await postMovimiento(
       baseUrl,
       { sku: 'ZAP-IDEM-MISM', cantidad: 3, motivo: 'COMPRA' },
       headers,
     );
-    const second = await postMovimiento(
+    const conflictResponse = await postMovimiento(
       baseUrl,
       { sku: 'ZAP-IDEM-MISM', cantidad: 9, motivo: 'COMPRA' },
       headers,
     );
 
-    assert.equal(first.status, 201);
-    assert.equal(second.status, 422);
-    const problem = (await second.json()) as Record<string, unknown>;
+    assert.equal(originalResponse.status, 201);
+    assert.equal(conflictResponse.status, 422);
+    const problem = (await conflictResponse.json()) as Record<string, unknown>;
     assert.equal(problem.type, 'urn:problem:reintento-distinto');
     assert.equal(problem.status, 422);
 
-    const get = await fetch(`${baseUrl}/stock/ZAP-IDEM-MISM`);
-    const stock = (await get.json()) as StockResponse;
+    const stockResponse = await fetch(`${baseUrl}/stock/ZAP-IDEM-MISM`);
+    const stock = (await stockResponse.json()) as StockResponse;
     assert.equal(stock.stockDisponible, 7);
   });
 
@@ -505,10 +505,10 @@ describe('POST /stock/movimientos y GET /stock/:sku', () => {
   it('un SKU desconocido → 404 problem detail en GET (200 chars)', async () => {
     const sku = 'SKU-LARGO-'.repeat(20);
 
-    const get = await fetch(`${baseUrl}/stock/${sku}`);
+    const stockResponse = await fetch(`${baseUrl}/stock/${sku}`);
 
-    assert.equal(get.status, 404);
-    const problem = (await get.json()) as Record<string, unknown>;
+    assert.equal(stockResponse.status, 404);
+    const problem = (await stockResponse.json()) as Record<string, unknown>;
     assert.equal(problem.type, 'urn:problem:variante-no-encontrada');
     assert.equal(problem.status, 404);
   });
