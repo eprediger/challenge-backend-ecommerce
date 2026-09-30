@@ -24,7 +24,7 @@ export class Movimiento {
    *
    * @returns The signed delta, never zero.
    */
-  deltaConSigno(): number {
+  signedDelta(): number {
     return this.cantidad.valor * this.motivo.direccion;
   }
 }

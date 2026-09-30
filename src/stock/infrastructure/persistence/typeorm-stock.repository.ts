@@ -27,14 +27,14 @@ export class TypeOrmStockRepository extends StockRepository {
     super();
   }
 
-  async buscar(sku: Sku): Promise<Stock | null> {
-    const fila = await this.dataSource
+  async find(sku: Sku): Promise<Stock | null> {
+    const row = await this.dataSource
       .getRepository(StockOrmEntity)
       .findOneBy({ sku: sku.valor });
-    return fila === null ? null : new Stock(sku, fila.cantidadDisponible);
+    return row === null ? null : new Stock(sku, row.cantidadDisponible);
   }
 
-  async crear(stock: Stock): Promise<void> {
+  async create(stock: Stock): Promise<void> {
     await this.dataSource.getRepository(StockOrmEntity).insert({
       sku: stock.sku.valor,
       cantidadDisponible: stock.cantidadDisponible,
@@ -51,17 +51,17 @@ export class TypeOrmStockRepository extends StockRepository {
    * {@link StockInsuficienteError}. The movement inserts in the same
    * transaction.
    *
-   * With `claveIdempotencia`, the unique index on
+   * With `idempotencyKey`, the unique index on
    * `idempotency_key` arbitrates retries: on violation the whole
    * transaction rolls back and the already-persisted movement is
    * re-read — an identical payload gets it replayed, a different
    * payload is refused with `ReintentoDistintoError` (422).
    */
-  async guardar(
+  async save(
     movimiento: Movimiento,
-    claveIdempotencia: string,
+    idempotencyKey: string,
   ): Promise<Movimiento> {
-    return this.serializado(async () => {
+    return this.serialized(async () => {
       try {
         await this.dataSource.transaction(async (em) => {
           const result = await em
@@ -74,47 +74,47 @@ export class TypeOrmStockRepository extends StockRepository {
             .where('sku = :sku AND cantidad_disponible + :delta >= 0')
             .setParameters({
               sku: movimiento.sku.valor,
-              delta: movimiento.deltaConSigno(),
+              delta: movimiento.signedDelta(),
             })
             .execute();
           if (result.affected === 0) {
-            const fila = await em
+            const row = await em
               .getRepository(StockOrmEntity)
               .findOneBy({ sku: movimiento.sku.valor });
-            if (fila === null) {
+            if (row === null) {
               throw new VarianteNoEncontradaError(movimiento.sku);
             }
             throw new StockInsuficienteError(
               movimiento.sku,
-              fila.cantidadDisponible,
+              row.cantidadDisponible,
               movimiento.cantidad,
             );
           }
           await em.insert(MovimientoStockOrmEntity, {
             id: movimiento.id,
             sku: movimiento.sku.valor,
-            delta: movimiento.deltaConSigno(),
-            claveIdempotencia,
-            motivo: movimiento.motivo.clave,
+            delta: movimiento.signedDelta(),
+            idempotencyKey,
+            motivo: movimiento.motivo.code,
             fecha: movimiento.fecha,
           });
         });
         return movimiento;
       } catch (error) {
-        const existente = await this.buscarMovimiento(claveIdempotencia);
-        if (existente !== null) {
+        const existing = await this.findMovimiento(idempotencyKey);
+        if (existing !== null) {
           if (
-            existente.sku.valor !== movimiento.sku.valor ||
-            existente.cantidad.valor !== movimiento.cantidad.valor ||
-            existente.motivo !== movimiento.motivo
+            existing.sku.valor !== movimiento.sku.valor ||
+            existing.cantidad.valor !== movimiento.cantidad.valor ||
+            existing.motivo !== movimiento.motivo
           ) {
             throw new ReintentoDistintoError(
-              claveIdempotencia,
-              existente,
+              idempotencyKey,
+              existing,
               movimiento,
             );
           }
-          return existente;
+          return existing;
         }
         // Postgres `22003` — a delta beyond int4 range is a domain
         // invalid quantity, not an infrastructure failure.
@@ -130,43 +130,43 @@ export class TypeOrmStockRepository extends StockRepository {
   }
 
   /**
-   * The `Movimiento` persisted under `claveIdempotencia`, or `null`.
+   * The `Movimiento` persisted under `idempotencyKey`, or `null`.
    * Rehydrates from the ledger row — `Cantidad` is `|delta|`.
    */
-  async buscarMovimiento(
-    clave: string,
+  async findMovimiento(
+    code: string,
   ): Promise<Movimiento | null> {
-    const fila = await this.dataSource
+    const row = await this.dataSource
       .getRepository(MovimientoStockOrmEntity)
-      .findOneBy({ claveIdempotencia: clave });
-    if (fila === null) {
+      .findOneBy({ idempotencyKey: code });
+    if (row === null) {
       return null;
     }
     return new Movimiento(
-      fila.id,
-      new Sku(fila.sku),
-      new Cantidad(Math.abs(fila.delta)),
-      Motivo.desde(fila.motivo),
-      fila.fecha,
+      row.id,
+      new Sku(row.sku),
+      new Cantidad(Math.abs(row.delta)),
+      Motivo.from(row.motivo),
+      row.fecha,
     );
   }
 
   /**
    * ponytail: promise-chain mutex — sqlite's single connection rejects
-   * overlapping write transactions (`SQLITE_BUSY`), so `guardar`
+   * overlapping write transactions (`SQLITE_BUSY`), so `save`
    * serializes them. Postgres relies on row locks instead and skips
    * this. Ceiling: one stock writer at a time per process; if write
    * throughput ever matters on sqlite, WAL + `busy_timeout` is the
    * upgrade.
    */
-  private escritura: Promise<unknown> = Promise.resolve();
+  private writeChain: Promise<unknown> = Promise.resolve();
 
-  private serializado<T>(fn: () => Promise<T>): Promise<T> {
+  private serialized<T>(fn: () => Promise<T>): Promise<T> {
     if (this.dataSource.options.type !== 'sqlite') {
       return fn();
     }
-    const result = this.escritura.then(fn, fn);
-    this.escritura = result.then(
+    const result = this.writeChain.then(fn, fn);
+    this.writeChain = result.then(
       () => undefined,
       () => undefined,
     );

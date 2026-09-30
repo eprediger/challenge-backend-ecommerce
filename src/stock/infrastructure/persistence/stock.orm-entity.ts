@@ -6,7 +6,7 @@ import { Check, Column, Entity, PrimaryColumn } from 'typeorm';
  * is the backstop for the aggregate's only invariant. No FK to
  * `variante.sku` on purpose: declaring it needs an ORM relation, which
  * would import a Catalogo entity — contexts meet only at `Sku`;
- * `crearItem` is the enforcement point instead.
+ * `createItem` is the enforcement point instead.
  */
 @Entity({ name: 'stock' })
 @Check('"cantidad_disponible" >= 0')

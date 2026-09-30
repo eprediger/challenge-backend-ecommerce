@@ -13,14 +13,14 @@ export enum Direccion {
  * Movement reason — an enumeration class: each instance carries its
  * `direccion`, so a reason cannot be declared without one and the
  * sign travels with the value (`cantidad × motivo.direccion`).
- * Instances are singletons: `Motivo.desde('COMPRA') === Motivo.COMPRA`.
- * Wire shape is a boundary concern: adapters serialize `motivo.clave`,
+ * Instances are singletons: `Motivo.from('COMPRA') === Motivo.COMPRA`.
+ * Wire shape is a boundary concern: adapters serialize `motivo.code`,
  * the domain knows nothing about JSON.
  */
 export class Motivo {
   private constructor(
     /** How the reason appears in the API and the database. */
-    readonly clave: string,
+    readonly code: string,
     /** Which way this reason moves `cantidadDisponible`. */
     readonly direccion: Direccion,
   ) {}
@@ -36,8 +36,8 @@ export class Motivo {
   /** Manual adjustment down. */
   static readonly AJUSTE_NEGATIVO = new Motivo('AJUSTE_NEGATIVO', Direccion.SALIDA);
 
-  /** Every declared reason — for schema validation and `desde`. */
-  static readonly todos: readonly Motivo[] = [
+  /** Every declared reason — for schema validation and `from`. */
+  static readonly all: readonly Motivo[] = [
     Motivo.INGRESO,
     Motivo.DEVOLUCION,
     Motivo.COMPRA,
@@ -46,17 +46,17 @@ export class Motivo {
   ];
 
   /**
-   * Parses a reason by its `clave`.
+   * Parses a reason by its `code`.
    *
-   * @param clave - The wire/stored spelling, e.g. `"COMPRA"`.
+   * @param code - The wire/stored spelling, e.g. `"COMPRA"`.
    * @returns The matching singleton instance.
-   * @throws {@link MotivoInvalidoError} when `clave` is not a declared
+   * @throws {@link MotivoInvalidoError} when `code` is not a declared
    *   reason.
    */
-  static desde(clave: string): Motivo {
-    const motivo = Motivo.todos.find((m) => m.clave === clave);
+  static from(code: string): Motivo {
+    const motivo = Motivo.all.find((m) => m.code === code);
     if (!motivo) {
-      throw new MotivoInvalidoError(clave);
+      throw new MotivoInvalidoError(code);
     }
     return motivo;
   }

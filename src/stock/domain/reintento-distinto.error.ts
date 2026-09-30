@@ -7,7 +7,7 @@ import type { Sku } from '../../shared/domain/sku';
  * The identifying fields of a movement request — what a retry must
  * repeat verbatim (fecha is server-side, never part of the payload).
  */
-export interface DatosMovimiento {
+export interface MovimientoPayload {
   readonly sku: Sku;
   readonly cantidad: Cantidad;
   readonly motivo: Motivo;
@@ -23,14 +23,14 @@ export class ReintentoDistintoError extends Error {
   readonly summary = 'Reintento distinto';
 
   constructor(
-    readonly claveIdempotencia: string,
-    readonly persistido: Movimiento,
-    readonly recibido: DatosMovimiento,
+    readonly idempotencyKey: string,
+    readonly persisted: Movimiento,
+    readonly received: MovimientoPayload,
   ) {
     super(
-      `La clave "${claveIdempotencia}" ya fue usada con otro movimiento ` +
-        `(${persistido.motivo.clave} ${persistido.cantidad.valor} de ${persistido.sku.valor}; ` +
-        `recibido ${recibido.motivo.clave} ${recibido.cantidad.valor} de ${recibido.sku.valor})`,
+      `La code "${idempotencyKey}" ya fue usada con otro movimiento ` +
+        `(${persisted.motivo.code} ${persisted.cantidad.valor} de ${persisted.sku.valor}; ` +
+        `received ${received.motivo.code} ${received.cantidad.valor} de ${received.sku.valor})`,
     );
     this.name = 'ReintentoDistintoError';
   }

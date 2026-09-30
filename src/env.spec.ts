@@ -37,7 +37,7 @@ describe('loadEnv', () => {
     });
     assert.equal(env.app.port, 3000);
     if (env.database.type !== 'sqlite') {
-      assert.fail('esperaba la variante sqlite');
+      assert.fail('expected the sqlite variant');
     }
     assert.equal(env.database.database, 'database.sqlite');
   });
@@ -65,7 +65,7 @@ describe('loadEnv', () => {
       DB_PASSWORD: 'postgres',
     });
     if (env.database.type !== 'postgres') {
-      assert.fail('esperaba la variante postgres');
+      assert.fail('expected the postgres variant');
     }
     assert.equal(env.database.host, 'postgres');
     assert.equal(env.database.port, 5433);

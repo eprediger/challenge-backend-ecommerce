@@ -24,18 +24,18 @@ export class StockService {
    * only way one comes to exist (a variante and its stock are created
    * together; today the seed and the e2e arrange call this).
    */
-  async crearItem(sku: Sku): Promise<void> {
-    await this.stockRepository.crear(Stock.crear(sku));
+  async createItem(sku: Sku): Promise<void> {
+    await this.stockRepository.create(Stock.create(sku));
   }
 
   /**
    * Registers a movement on the `Stock` of `sku`. A
-   * `claveIdempotencia` makes the call safe to retry: a duplicate
+   * `idempotencyKey` makes the call safe to retry: a duplicate
    * returns the already-recorded `Movimiento` instead of applying
    * twice.
    *
    * @returns The recorded {@link Movimiento} — or its idempotent twin
-   *   when `claveIdempotencia` was seen before.
+   *   when `idempotencyKey` was seen before.
    * @throws {@link VarianteNoEncontradaError} when no stock exists
    *   for the SKU.
    * @throws {@link StockInsuficienteError} when the movement would
@@ -46,36 +46,36 @@ export class StockService {
     sku: Sku,
     cantidad: Cantidad,
     motivo: Motivo,
-    claveIdempotencia: string,
+    idempotencyKey: string,
   ): Promise<Movimiento> {
     enrichWideEvent({
       sku: sku.valor,
       cantidad: cantidad.valor,
-      motivo: motivo.clave,
+      motivo: motivo.code,
     });
     // Key reuse is answered before processing: identical → replay,
     // different payload → 422 (the draft's semantics).
-    const previo = await this.stockRepository.buscarMovimiento(claveIdempotencia);
-    if (previo !== null) {
+    const existing = await this.stockRepository.findMovimiento(idempotencyKey);
+    if (existing !== null) {
       if (
-        previo.sku.valor !== sku.valor ||
-        previo.cantidad.valor !== cantidad.valor ||
-        previo.motivo !== motivo
+        existing.sku.valor !== sku.valor ||
+        existing.cantidad.valor !== cantidad.valor ||
+        existing.motivo !== motivo
       ) {
-        throw new ReintentoDistintoError(claveIdempotencia, previo, {
+        throw new ReintentoDistintoError(idempotencyKey, existing, {
           sku,
           cantidad,
           motivo,
         });
       }
-      return previo;
+      return existing;
     }
-    const stock = await this.stockRepository.buscar(sku);
+    const stock = await this.stockRepository.find(sku);
     if (stock === null) {
       throw new VarianteNoEncontradaError(sku);
     }
     const movimiento = stock.registrar(cantidad, motivo, new Date());
-    return this.stockRepository.guardar(movimiento, claveIdempotencia);
+    return this.stockRepository.save(movimiento, idempotencyKey);
   }
 
   /**
@@ -87,7 +87,7 @@ export class StockService {
    */
   async stockDisponible(sku: Sku): Promise<number> {
     enrichWideEvent({ sku: sku.valor });
-    const stock = await this.stockRepository.buscar(sku);
+    const stock = await this.stockRepository.find(sku);
     if (stock === null) {
       throw new VarianteNoEncontradaError(sku);
     }

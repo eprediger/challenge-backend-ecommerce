@@ -9,7 +9,7 @@ export const registrarMovimientoSchema = z.strictObject({
   sku: z.string(),
   cantidad: z.number(),
   motivo: z.enum(
-    Motivo.todos.map((m) => m.clave) as [string, ...string[]],
+    Motivo.all.map((m) => m.code) as [string, ...string[]],
   ),
 });
 

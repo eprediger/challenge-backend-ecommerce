@@ -11,14 +11,14 @@ const unaFecha = (): Date => new Date('2026-01-01T00:00:00.000Z');
 
 describe('Stock', () => {
   it('se crea con cantidad disponible en cero', () => {
-    const stock = Stock.crear(unSku());
+    const stock = Stock.create(unSku());
 
     assert.equal(stock.cantidadDisponible, 0);
     assert.equal(stock.sku.valor, 'ZAP-42-NEG');
   });
 
   it('un INGRESO aumenta el stock disponible', () => {
-    const stock = Stock.crear(unSku());
+    const stock = Stock.create(unSku());
 
     const movimiento = stock.registrar(
       new Cantidad(5),
@@ -31,7 +31,7 @@ describe('Stock', () => {
     assert.equal(movimiento.motivo, Motivo.INGRESO);
     assert.equal(movimiento.sku.valor, 'ZAP-42-NEG');
     assert.deepEqual(movimiento.fecha, unaFecha());
-    assert.equal(movimiento.deltaConSigno(), 5);
+    assert.equal(movimiento.signedDelta(), 5);
     assert.match(
       movimiento.id,
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
@@ -39,19 +39,19 @@ describe('Stock', () => {
   });
 
   for (const motivo of [Motivo.COMPRA, Motivo.AJUSTE_NEGATIVO]) {
-    it(`una SALIDA (${motivo.clave}) descuenta el stock disponible`, () => {
-      const stock = Stock.crear(unSku());
+    it(`una SALIDA (${motivo.code}) descuenta el stock disponible`, () => {
+      const stock = Stock.create(unSku());
       stock.registrar(new Cantidad(5), Motivo.INGRESO, unaFecha());
 
       const movimiento = stock.registrar(new Cantidad(3), motivo, unaFecha());
 
       assert.equal(stock.cantidadDisponible, 2);
-      assert.equal(movimiento.deltaConSigno(), -3);
+      assert.equal(movimiento.signedDelta(), -3);
     });
   }
 
   it('una SALIDA mayor al disponible es rechazada', () => {
-    const stock = Stock.crear(unSku());
+    const stock = Stock.create(unSku());
     stock.registrar(new Cantidad(2), Motivo.INGRESO, unaFecha());
 
     assert.throws(

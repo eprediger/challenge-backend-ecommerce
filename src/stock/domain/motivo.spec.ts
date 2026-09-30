@@ -12,11 +12,11 @@ describe('Motivo', () => {
     assert.equal(Motivo.AJUSTE_NEGATIVO.direccion, Direccion.SALIDA);
   });
 
-  it('desde() devuelve la misma instancia para una clave válida', () => {
-    assert.equal(Motivo.desde('COMPRA'), Motivo.COMPRA);
+  it('from() devuelve la misma instancia para una code válida', () => {
+    assert.equal(Motivo.from('COMPRA'), Motivo.COMPRA);
   });
 
-  it('desde() rechaza un motivo desconocido', () => {
-    assert.throws(() => Motivo.desde('VENTA'), MotivoInvalidoError);
+  it('from() rechaza un motivo desconocido', () => {
+    assert.throws(() => Motivo.from('VENTA'), MotivoInvalidoError);
   });
 });

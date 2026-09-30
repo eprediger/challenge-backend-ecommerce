@@ -34,7 +34,7 @@ interface StockResponse {
   stockDisponible: number;
 }
 
-async function crearVarianteConItem(
+async function createVarianteConItem(
   app: INestApplication,
   sku: string,
 ): Promise<void> {
@@ -47,7 +47,7 @@ async function crearVarianteConItem(
     sku,
     productoId: producto.id,
   });
-  await app.get(StockService).crearItem(new Sku(sku));
+  await app.get(StockService).createItem(new Sku(sku));
 }
 
 function postMovimiento(
@@ -104,7 +104,7 @@ describe('POST /stock/movimientos y GET /stock/:sku', () => {
   });
 
   it('un INGRESO registra el movimiento y el GET responde el stock disponible', async () => {
-    await crearVarianteConItem(app, 'ZAP-42-NEG');
+    await createVarianteConItem(app, 'ZAP-42-NEG');
 
     const response = await postMovimiento(baseUrl, {
       sku: 'ZAP-42-NEG',
@@ -130,7 +130,7 @@ describe('POST /stock/movimientos y GET /stock/:sku', () => {
   });
 
   it('una COMPRA descuenta el stock disponible', async () => {
-    await crearVarianteConItem(app, 'ZAP-40-BLA');
+    await createVarianteConItem(app, 'ZAP-40-BLA');
     await app
       .get(StockService)
       .registrarMovimiento(
@@ -156,7 +156,7 @@ describe('POST /stock/movimientos y GET /stock/:sku', () => {
   });
 
   it('una COMPRA mayor al disponible → 409 con problem detail', async () => {
-    await crearVarianteConItem(app, 'ZAP-41-ROJ');
+    await createVarianteConItem(app, 'ZAP-41-ROJ');
     await app
       .get(StockService)
       .registrarMovimiento(
@@ -194,7 +194,7 @@ describe('POST /stock/movimientos y GET /stock/:sku', () => {
   });
 
   it('20 COMPRA 1 concurrentes sobre stock 5 → 5×201, 15×409, disponible 0', async () => {
-    await crearVarianteConItem(app, 'ZAP-CONC');
+    await createVarianteConItem(app, 'ZAP-CONC');
     await app
       .get(StockService)
       .registrarMovimiento(
@@ -240,7 +240,7 @@ describe('POST /stock/movimientos y GET /stock/:sku', () => {
   });
 
   it('INGRESO y COMPRA concurrentes → todos 201 y SUM(delta) == disponible', async () => {
-    await crearVarianteConItem(app, 'ZAP-MIX');
+    await createVarianteConItem(app, 'ZAP-MIX');
     await app
       .get(StockService)
       .registrarMovimiento(
@@ -289,8 +289,8 @@ describe('POST /stock/movimientos y GET /stock/:sku', () => {
   });
 
   it('invariante: SUM(delta) == cantidad_disponible por SKU', async () => {
-    await crearVarianteConItem(app, 'INV-A');
-    await crearVarianteConItem(app, 'INV-B');
+    await createVarianteConItem(app, 'INV-A');
+    await createVarianteConItem(app, 'INV-B');
     const posts = [
       { sku: 'INV-A', cantidad: 10, motivo: 'INGRESO', expected: 201 },
       { sku: 'INV-A', cantidad: 3, motivo: 'COMPRA', expected: 201 },
@@ -332,7 +332,7 @@ describe('POST /stock/movimientos y GET /stock/:sku', () => {
   });
 
   it('mismo Idempotency-Key → mismo movimiento, stock descuenta una vez', async () => {
-    await crearVarianteConItem(app, 'ZAP-IDEM');
+    await createVarianteConItem(app, 'ZAP-IDEM');
     await app
       .get(StockService)
       .registrarMovimiento(
@@ -349,10 +349,10 @@ describe('POST /stock/movimientos y GET /stock/:sku', () => {
 
     assert.equal(first.status, 201);
     assert.equal(second.status, 201);
-    const uno = (await first.json()) as MovimientoResponse;
-    const dos = (await second.json()) as MovimientoResponse;
-    assert.deepEqual(dos, uno);
-    assert.equal(uno.cantidad, 3);
+    const original = (await first.json()) as MovimientoResponse;
+    const replayed = (await second.json()) as MovimientoResponse;
+    assert.deepEqual(replayed, original);
+    assert.equal(original.cantidad, 3);
 
     const get = await fetch(`${baseUrl}/stock/ZAP-IDEM`);
     const stock = (await get.json()) as StockResponse;
@@ -367,7 +367,7 @@ describe('POST /stock/movimientos y GET /stock/:sku', () => {
   });
 
   it('Idempotency-Key concurrente → un escritor, todos reciben el mismo movimiento', async () => {
-    await crearVarianteConItem(app, 'ZAP-IDEM-CONC');
+    await createVarianteConItem(app, 'ZAP-IDEM-CONC');
     await app
       .get(StockService)
       .registrarMovimiento(
@@ -401,7 +401,7 @@ describe('POST /stock/movimientos y GET /stock/:sku', () => {
   });
 
   it('mismo Idempotency-Key con payload distinto → 422, sin re-aplicar', async () => {
-    await crearVarianteConItem(app, 'ZAP-IDEM-MISM');
+    await createVarianteConItem(app, 'ZAP-IDEM-MISM');
     await app
       .get(StockService)
       .registrarMovimiento(
@@ -438,7 +438,7 @@ describe('POST /stock/movimientos y GET /stock/:sku', () => {
     'INGRESO 3_000_000_000 → 400 cantidad-invalida (postgres)',
     { skip: process.env.DB_TYPE !== 'postgres' },
     async () => {
-      await crearVarianteConItem(app, 'ZAP-BIG');
+      await createVarianteConItem(app, 'ZAP-BIG');
       await app
         .get(StockService)
         .registrarMovimiento(
@@ -575,7 +575,7 @@ describe('POST /stock/movimientos y GET /stock/:sku', () => {
   }
 
   it('un request emite un wide event', async () => {
-    await crearVarianteConItem(app, 'REM-001');
+    await createVarianteConItem(app, 'REM-001');
     const requestId = randomUUID();
     const logs: Record<string, unknown>[] = [];
     const originalLog = console.log;

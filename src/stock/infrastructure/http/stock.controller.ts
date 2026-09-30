@@ -23,7 +23,7 @@ import {
 /**
  * HTTP adapter for the stock endpoints. Translates the wire body into
  * value objects (they enforce the domain rules) and domain objects
- * back into the contract's shape — `valor`/`clave` mapped here, the
+ * back into the contract's shape — `valor`/`code` mapped here, the
  * domain knows nothing about JSON.
  */
 @Controller('stock')
@@ -37,21 +37,21 @@ export class StockController {
     @Body() body: RegistrarMovimientoBody,
     @Headers('idempotency-key') idempotencyKey?: string,
   ): Promise<unknown> {
-    const clave = idempotencyKey?.trim();
-    if (!clave) {
+    const code = idempotencyKey?.trim();
+    if (!code) {
       throw new ClaveIdempotenciaRequeridaError();
     }
     const movimiento = await this.stockService.registrarMovimiento(
       new Sku(body.sku),
       new Cantidad(body.cantidad),
-      Motivo.desde(body.motivo),
-      clave,
+      Motivo.from(body.motivo),
+      code,
     );
     return {
       id: movimiento.id,
       sku: movimiento.sku.valor,
       cantidad: movimiento.cantidad.valor,
-      motivo: movimiento.motivo.clave,
+      motivo: movimiento.motivo.code,
       fecha: movimiento.fecha.toISOString(),
     };
   }

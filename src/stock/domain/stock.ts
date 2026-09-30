@@ -25,7 +25,7 @@ export class Stock {
   /**
    * New stock for a `Sku`, starting empty.
    */
-  static crear(sku: Sku): Stock {
+  static create(sku: Sku): Stock {
     return new Stock(sku, 0);
   }
 
@@ -57,8 +57,8 @@ export class Stock {
    */
   registrar(cantidad: Cantidad, motivo: Motivo, fecha: Date): Movimiento {
     const delta = cantidad.valor * motivo.direccion;
-    const nuevaCantidadDisponible = this._cantidadDisponible + delta;
-    if (nuevaCantidadDisponible < 0) {
+    const newCantidadDisponible = this._cantidadDisponible + delta;
+    if (newCantidadDisponible < 0) {
       throw new StockInsuficienteError(
         this.sku,
         this._cantidadDisponible,
@@ -72,7 +72,7 @@ export class Stock {
       motivo,
       fecha,
     );
-    this._cantidadDisponible = nuevaCantidadDisponible;
+    this._cantidadDisponible = newCantidadDisponible;
     return movimiento;
   }
 }

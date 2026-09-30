@@ -30,11 +30,11 @@ export class MovimientoStockOrmEntity {
    */
   @Index({ unique: true })
   @Column({ name: 'idempotency_key', type: 'text' })
-  claveIdempotencia!: string;
+  idempotencyKey!: string;
 
   @Column({
     type: 'simple-enum',
-    enum: Motivo.todos.map((m) => m.clave),
+    enum: Motivo.all.map((m) => m.code),
   })
   motivo!: string;
 
