@@ -28,9 +28,9 @@ export class ReintentoDistintoError extends Error {
     readonly received: MovimientoPayload,
   ) {
     super(
-      `La code "${idempotencyKey}" ya fue usada con otro movimiento ` +
+      `La clave "${idempotencyKey}" ya fue usada con otro movimiento ` +
         `(${persisted.motivo.code} ${persisted.cantidad.valor} de ${persisted.sku.valor}; ` +
-        `received ${received.motivo.code} ${received.cantidad.valor} de ${received.sku.valor})`,
+        `recibido ${received.motivo.code} ${received.cantidad.valor} de ${received.sku.valor})`,
     );
     this.name = 'ReintentoDistintoError';
   }
