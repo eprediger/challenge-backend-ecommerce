@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { InjectDataSource } from '@nestjs/typeorm';
-import { DataSource, QueryFailedError } from 'typeorm';
+import { InjectRepository } from '@nestjs/typeorm';
+import { QueryFailedError, Repository } from 'typeorm';
 import { Sku } from '../../../shared/domain/sku';
 import { Cantidad } from '../../domain/cantidad';
 import {
@@ -22,20 +22,21 @@ import { StockOrmEntity } from './stock.orm-entity';
 @Injectable()
 export class TypeOrmStockRepository extends StockRepository {
   constructor(
-    @InjectDataSource() private readonly dataSource: DataSource,
+    @InjectRepository(StockOrmEntity)
+    private readonly stockRepo: Repository<StockOrmEntity>,
+    @InjectRepository(MovimientoStockOrmEntity)
+    private readonly movimientoRepo: Repository<MovimientoStockOrmEntity>,
   ) {
     super();
   }
 
   async find(sku: Sku): Promise<Stock | null> {
-    const row = await this.dataSource
-      .getRepository(StockOrmEntity)
-      .findOneBy({ sku: sku.valor });
+    const row = await this.stockRepo.findOneBy({ sku: sku.valor });
     return row === null ? null : new Stock(sku, row.cantidadDisponible);
   }
 
   async create(stock: Stock): Promise<void> {
-    await this.dataSource.getRepository(StockOrmEntity).insert({
+    await this.stockRepo.insert({
       sku: stock.sku.valor,
       cantidadDisponible: stock.cantidadDisponible,
     });
@@ -63,7 +64,7 @@ export class TypeOrmStockRepository extends StockRepository {
   ): Promise<Movimiento> {
     return this.serialized(async () => {
       try {
-        await this.dataSource.transaction(async (em) => {
+        await this.stockRepo.manager.transaction(async (em) => {
           const update = await em
             .createQueryBuilder()
             .update(StockOrmEntity)
@@ -136,9 +137,7 @@ export class TypeOrmStockRepository extends StockRepository {
   async findMovimiento(
     idempotencyKey: string,
   ): Promise<Movimiento | null> {
-    const row = await this.dataSource
-      .getRepository(MovimientoStockOrmEntity)
-      .findOneBy({ idempotencyKey });
+    const row = await this.movimientoRepo.findOneBy({ idempotencyKey });
     if (row === null) {
       return null;
     }
@@ -162,7 +161,7 @@ export class TypeOrmStockRepository extends StockRepository {
   private writeChain: Promise<unknown> = Promise.resolve();
 
   private serialized<T>(fn: () => Promise<T>): Promise<T> {
-    if (this.dataSource.options.type !== 'sqlite') {
+    if (this.stockRepo.manager.connection.options.type !== 'sqlite') {
       return fn();
     }
     const result = this.writeChain.then(fn, fn);
