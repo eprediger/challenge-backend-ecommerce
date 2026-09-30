@@ -2,6 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import type { Sku } from '../../../shared/domain/sku';
+import {
+  StockInsuficienteError,
+  VarianteNoEncontradaError,
+} from '../../domain/errors';
 import type { Movimiento } from '../../domain/movimiento';
 import { Stock } from '../../domain/stock';
 import { StockRepository } from '../../domain/stock.repository';
@@ -34,28 +38,74 @@ export class TypeOrmStockRepository extends StockRepository {
   }
 
   /**
-   * Writes the delta, never an in-memory absolute:
-   * `cantidad_disponible` is incremented by
-   * `movimiento.deltaConSigno()` inside one transaction with the
-   * movement insert.
+   * Writes the delta, never an in-memory absolute, via an atomic
+   * conditional update:
+   * `UPDATE stock SET cantidad_disponible = cantidad_disponible + :delta
+   *  WHERE sku = :sku AND cantidad_disponible + :delta >= 0`.
+   * A zero-row update means a concurrent movement won the balance,
+   * so the fresh row is read back for the
+   * {@link StockInsuficienteError}. The movement inserts in the same
+   * transaction.
    */
   async guardar(movimiento: Movimiento): Promise<void> {
-    await this.dataSource.transaction(async (em) => {
-      await em.update(
-        StockOrmEntity,
-        { sku: movimiento.sku.valor },
-        {
-          cantidadDisponible: () =>
-            `cantidad_disponible + ${movimiento.deltaConSigno()}`,
-        },
-      );
-      await em.insert(MovimientoStockOrmEntity, {
-        id: movimiento.id,
-        sku: movimiento.sku.valor,
-        delta: movimiento.deltaConSigno(),
-        motivo: movimiento.motivo.clave,
-        fecha: movimiento.fecha,
+    await this.serializado(async () => {
+      await this.dataSource.transaction(async (em) => {
+        const result = await em
+          .createQueryBuilder()
+          .update(StockOrmEntity)
+          .set({
+            cantidadDisponible: () =>
+              'cantidad_disponible + :delta',
+          })
+          .where('sku = :sku AND cantidad_disponible + :delta >= 0')
+          .setParameters({
+            sku: movimiento.sku.valor,
+            delta: movimiento.deltaConSigno(),
+          })
+          .execute();
+        if (result.affected === 0) {
+          const fila = await em
+            .getRepository(StockOrmEntity)
+            .findOneBy({ sku: movimiento.sku.valor });
+          if (fila === null) {
+            throw new VarianteNoEncontradaError(movimiento.sku);
+          }
+          throw new StockInsuficienteError(
+            movimiento.sku,
+            fila.cantidadDisponible,
+            movimiento.cantidad,
+          );
+        }
+        await em.insert(MovimientoStockOrmEntity, {
+          id: movimiento.id,
+          sku: movimiento.sku.valor,
+          delta: movimiento.deltaConSigno(),
+          motivo: movimiento.motivo.clave,
+          fecha: movimiento.fecha,
+        });
       });
     });
+  }
+
+  /**
+   * ponytail: promise-chain mutex — sqlite's single connection rejects
+   * overlapping write transactions (`SQLITE_BUSY`), so `guardar`
+   * serializes them. Postgres relies on row locks instead and skips
+   * this. Ceiling: one stock writer at a time per process; if write
+   * throughput ever matters on sqlite, WAL + `busy_timeout` is the
+   * upgrade.
+   */
+  private escritura: Promise<unknown> = Promise.resolve();
+
+  private serializado<T>(fn: () => Promise<T>): Promise<T> {
+    if (this.dataSource.options.type !== 'sqlite') {
+      return fn();
+    }
+    const result = this.escritura.then(fn, fn);
+    this.escritura = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
   }
 }

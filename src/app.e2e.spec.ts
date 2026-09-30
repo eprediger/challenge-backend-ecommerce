@@ -176,6 +176,99 @@ describe('POST /stock/movimientos y GET /stock/:sku', () => {
     assert.equal(Number(total), 5);
   });
 
+  it('20 COMPRA 1 concurrentes sobre stock 5 → 5×201, 15×409, disponible 0', async () => {
+    await crearVarianteConStock(app, 'ZAP-CONC');
+    await app
+      .get(StockService)
+      .registrarMovimiento(
+        new Sku('ZAP-CONC'),
+        new Cantidad(5),
+        Motivo.INGRESO,
+      );
+
+    const responses = await Promise.all(
+      Array.from({ length: 20 }, () =>
+        postMovimiento(baseUrl, {
+          sku: 'ZAP-CONC',
+          cantidad: 1,
+          motivo: 'COMPRA',
+        }),
+      ),
+    );
+
+    const statuses = responses.map((r) => r.status);
+    assert.equal(
+      statuses.filter((s) => s === 201).length,
+      5,
+      `expected 5 winners, got: ${statuses.join(',')}`,
+    );
+    assert.equal(
+      statuses.filter((s) => s === 409).length,
+      15,
+      `expected 15 losers, got: ${statuses.join(',')}`,
+    );
+
+    const get = await fetch(`${baseUrl}/stock/ZAP-CONC`);
+    const stock = (await get.json()) as StockResponse;
+    assert.equal(stock.stockDisponible, 0);
+
+    // The ledger must agree: losers wrote no movement.
+    const [{ total }] = await app
+      .get(DataSource)
+      .query<[{ total: number }]>(
+        "SELECT COALESCE(SUM(delta), 0) AS total FROM movimiento_stock WHERE sku = 'ZAP-CONC'",
+      );
+    assert.equal(Number(total), 0);
+  });
+
+  it('INGRESO y COMPRA concurrentes → todos 201 y SUM(delta) == disponible', async () => {
+    await crearVarianteConStock(app, 'ZAP-MIX');
+    await app
+      .get(StockService)
+      .registrarMovimiento(
+        new Sku('ZAP-MIX'),
+        new Cantidad(10),
+        Motivo.INGRESO,
+      );
+
+    // Stock 10 so nothing can lose: an INGRESO's delta is never
+    // rejected by the conditional update, and 10 COMPRA 1 fit.
+    const responses = await Promise.all([
+      ...Array.from({ length: 10 }, () =>
+        postMovimiento(baseUrl, {
+          sku: 'ZAP-MIX',
+          cantidad: 3,
+          motivo: 'INGRESO',
+        }),
+      ),
+      ...Array.from({ length: 10 }, () =>
+        postMovimiento(baseUrl, {
+          sku: 'ZAP-MIX',
+          cantidad: 1,
+          motivo: 'COMPRA',
+        }),
+      ),
+    ]);
+
+    const statuses = responses.map((r) => r.status);
+    assert.equal(
+      statuses.filter((s) => s === 201).length,
+      20,
+      `expected all to win, got: ${statuses.join(',')}`,
+    );
+
+    const get = await fetch(`${baseUrl}/stock/ZAP-MIX`);
+    const stock = (await get.json()) as StockResponse;
+    assert.equal(stock.stockDisponible, 30);
+
+    const [{ total }] = await app
+      .get(DataSource)
+      .query<[{ total: number }]>(
+        "SELECT COALESCE(SUM(delta), 0) AS total FROM movimiento_stock WHERE sku = 'ZAP-MIX'",
+      );
+    assert.equal(Number(total), 30);
+  });
+
   it('un SKU desconocido → 404 problem detail en POST', async () => {
     const response = await postMovimiento(baseUrl, {
       sku: 'NO-EXISTE',
