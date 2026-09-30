@@ -207,6 +207,67 @@ describe('POST /stock/movimientos y GET /stock/:sku', () => {
     assert.equal(problem.status, 404);
   });
 
+  for (const [caso, body, tipoEsperado] of [
+    [
+      'cantidad 0',
+      { sku: 'X', cantidad: 0, motivo: 'COMPRA' },
+      'urn:problem:cantidad-invalida',
+    ],
+    [
+      'cantidad −1',
+      { sku: 'X', cantidad: -1, motivo: 'COMPRA' },
+      'urn:problem:cantidad-invalida',
+    ],
+    [
+      'cantidad 1.5',
+      { sku: 'X', cantidad: 1.5, motivo: 'COMPRA' },
+      'urn:problem:cantidad-invalida',
+    ],
+    [
+      'cantidad "3"',
+      { sku: 'X', cantidad: '3', motivo: 'COMPRA' },
+      'urn:problem:validacion',
+    ],
+    [
+      'cantidad 1e20',
+      { sku: 'X', cantidad: 1e20, motivo: 'COMPRA' },
+      'urn:problem:cantidad-invalida',
+    ],
+    [
+      'motivo desconocido',
+      { sku: 'X', cantidad: 1, motivo: 'NADA' },
+      'urn:problem:validacion',
+    ],
+    [
+      'campo extra',
+      { sku: 'X', cantidad: 1, motivo: 'COMPRA', extra: 1 },
+      'urn:problem:validacion',
+    ],
+    [
+      'campo faltante',
+      { sku: 'X', motivo: 'COMPRA' },
+      'urn:problem:validacion',
+    ],
+  ] as const) {
+    it(`body inválido (${caso}) → 400 ${tipoEsperado}`, async () => {
+      const response = await postMovimiento(baseUrl, body);
+
+      assert.equal(response.status, 400);
+      assert.match(
+        response.headers.get('content-type') ?? '',
+        /application\/problem\+json/,
+      );
+      const problem = (await response.json()) as Record<string, unknown>;
+      assert.equal(problem.type, tipoEsperado);
+      assert.equal(problem.status, 400);
+      assert.equal(typeof problem.detail, 'string');
+      if (tipoEsperado === 'urn:problem:validacion') {
+        assert.ok(Array.isArray(problem.errors));
+        assert.ok((problem.errors as unknown[]).length > 0);
+      }
+    });
+  }
+
   it('un request emite un wide event', async () => {
     await crearVarianteConStock(app, 'REM-001');
     const requestId = randomUUID();

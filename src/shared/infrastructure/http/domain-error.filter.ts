@@ -6,6 +6,7 @@ import {
   type ExceptionFilter,
 } from '@nestjs/common';
 import type { Response } from 'express';
+import { ZodError } from 'zod';
 import { SkuInvalidoError } from '../../domain/sku-invalido.error';
 import {
   CantidadInvalidaError,
@@ -24,17 +25,48 @@ interface Problem {
   [extension: string]: unknown;
 }
 
-/** Domain error class → HTTP status. `type` is derived
- * (`urn:problem:` + kebab-cased class name) and `title`/`detail`
- * come from the error's own `summary`/`message`, so adding a
- * domain error — from Stock today, Catalogo tomorrow — is one
- * line here plus its `summary` field. */
-const STATUS = new Map<new (...args: never[]) => Error, number>([
-  [StockInsuficienteError, HttpStatus.CONFLICT],
-  [VarianteNoEncontradaError, HttpStatus.NOT_FOUND],
-  [CantidadInvalidaError, HttpStatus.BAD_REQUEST],
-  [SkuInvalidoError, HttpStatus.BAD_REQUEST],
-  [MotivoInvalidoError, HttpStatus.BAD_REQUEST],
+/**
+ * One row per mapped error. Unset fields default to
+ * `type: urn:problem:` + the kebab-cased class name,
+ * `title: error.summary`, `detail: error.message`.
+ */
+interface ProblemSeed {
+  status: number;
+  type?: string;
+  title?: string;
+  detail?: string;
+  extension?: (error: Error) => Record<string, unknown>;
+}
+
+const PROBLEMS = new Map<new (...args: never[]) => Error, ProblemSeed>([
+  [
+    StockInsuficienteError,
+    {
+      status: HttpStatus.CONFLICT,
+      extension: (error) => ({
+        stockDisponible: (error as StockInsuficienteError).cantidadDisponible,
+      }),
+    },
+  ],
+  [VarianteNoEncontradaError, { status: HttpStatus.NOT_FOUND }],
+  [CantidadInvalidaError, { status: HttpStatus.BAD_REQUEST }],
+  [SkuInvalidoError, { status: HttpStatus.BAD_REQUEST }],
+  [MotivoInvalidoError, { status: HttpStatus.BAD_REQUEST }],
+  [
+    ZodError,
+    {
+      status: HttpStatus.BAD_REQUEST,
+      type: 'urn:problem:validacion',
+      title: 'Body inválido',
+      detail: 'El body no cumple el esquema esperado',
+      extension: (error) => ({
+        errors: (error as ZodError).issues.map((issue) => ({
+          path: issue.path.join('.'),
+          message: issue.message,
+        })),
+      }),
+    },
+  ],
 ]);
 
 /**
@@ -49,13 +81,12 @@ function slugOf(error: Error): string {
 }
 
 /**
- * Catches every error and answers an RFC 9457 problem detail —
- * domain errors get `urn:problem:<slug>` derived from the class
- * name plus their `title`, a framework `HttpException` keeps its
- * status, anything else becomes the `about:blank` 500. `instance`
- * carries the requestId from the ALS context so a response
- * correlates with its wide event; the error itself is also
- * enriched into that event.
+ * Catches every error and answers an RFC 9457 problem detail.
+ * Mapped errors come from the {@link PROBLEMS} table; a framework
+ * `HttpException` keeps its own status; anything else becomes a
+ * 500 without leaking internals. `instance` carries the requestId
+ * from the ALS context so a response correlates with its wide
+ * event, which the error also enriches.
  */
 @Catch()
 export class DomainErrorFilter implements ExceptionFilter {
@@ -76,37 +107,52 @@ export class DomainErrorFilter implements ExceptionFilter {
   }
 
   private problemFor(error: unknown): Problem {
-    if (error instanceof Error) {
-      const status = STATUS.get(
-        error.constructor as new (...args: never[]) => Error,
-      );
-      if (status !== undefined) {
-        const problem: Problem = {
-          type: `urn:problem:${slugOf(error)}`,
-          title: (error as { summary?: string }).summary ?? 'Error',
-          status,
-          detail: error.message,
-        };
-        // The only extension member today: the 409's `stockDisponible`.
-        if (error instanceof StockInsuficienteError) {
-          problem.stockDisponible = error.cantidadDisponible;
-        }
-        return problem;
-      }
-      if (error instanceof HttpException) {
-        return {
-          type: 'about:blank',
-          title: 'HTTP Error',
-          status: error.getStatus(),
-          detail: error.message,
-        };
-      }
+    const seed =
+      error instanceof Error ? this.seedFor(error) : undefined;
+    if (seed) {
+      return {
+        type: seed.type ?? `urn:problem:${slugOf(error as Error)}`,
+        title:
+          seed.title ??
+          (error as { summary?: string }).summary ??
+          'Error',
+        status: seed.status,
+        detail: seed.detail ?? (error as Error).message,
+        ...seed.extension?.(error as Error),
+      };
     }
+    const status =
+      error instanceof HttpException
+        ? error.getStatus()
+        : HttpStatus.INTERNAL_SERVER_ERROR;
     return {
       type: 'about:blank',
-      title: 'Internal Server Error',
-      status: 500,
-      detail: 'Error interno',
+      title: 'Error',
+      status,
+      detail:
+        error instanceof HttpException
+          ? error.message
+          : 'Error interno',
     };
+  }
+
+  /**
+   * Exact constructor key first; the `instanceof` scan catches
+   * subclasses — ZodError instances are not literally
+   * `new ZodError()`.
+   */
+  private seedFor(error: Error): ProblemSeed | undefined {
+    const seed = PROBLEMS.get(
+      error.constructor as new (...args: never[]) => Error,
+    );
+    if (seed) {
+      return seed;
+    }
+    for (const [errorClass, s] of PROBLEMS) {
+      if (error instanceof errorClass) {
+        return s;
+      }
+    }
+    return undefined;
   }
 }

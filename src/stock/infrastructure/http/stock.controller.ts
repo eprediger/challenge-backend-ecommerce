@@ -1,8 +1,22 @@
-import { Body, Controller, Get, HttpCode, Param, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Post,
+  UsePipes,
+} from '@nestjs/common';
 import { Sku } from '../../../shared/domain/sku';
+import { ZodValidationPipe } from '../../../shared/infrastructure/http/zod-validation.pipe';
 import { StockService } from '../../application/stock.service';
 import { Cantidad } from '../../domain/cantidad';
 import { Motivo } from '../../domain/motivo';
+import {
+  registrarMovimientoSchema,
+  type RegistrarMovimientoBody,
+} from './register-movement.schema';
 
 /**
  * HTTP adapter for the stock endpoints. Translates the wire body into
@@ -15,9 +29,10 @@ export class StockController {
   constructor(private readonly stockService: StockService) {}
 
   @Post('movimientos')
-  @HttpCode(201)
+  @HttpCode(HttpStatus.CREATED)
+  @UsePipes(new ZodValidationPipe(registrarMovimientoSchema))
   async registrarMovimiento(
-    @Body() body: { sku: string; cantidad: number; motivo: string },
+    @Body() body: RegistrarMovimientoBody,
   ): Promise<unknown> {
     const { movimiento, cantidadDisponible } =
       await this.stockService.registrarMovimiento(

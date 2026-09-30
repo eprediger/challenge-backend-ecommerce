@@ -339,7 +339,7 @@ src/
 
 17. [x] **`SKU desconocido → 404`** (POST and GET, incl. a 200-char SKU) → `VarianteNoEncontradaError` → 404 in the filter. Green on arrival — the step-16 filter already mapped it.
 
-18. [ ] **`body inválido → 400`** (parametrized: `cantidad` 0/−1/1.5/`"3"`/`1e20`, unknown `motivo`, extra field, missing field; all `application/problem+json` with the right `type` and an `errors` member for Zod details) → forces `register-movement.schema.ts` (`z.strictObject`), `ZodValidationPipe`, and the value-object errors → 400 mapping. (zod itself landed in step 6 for env validation.)
+18. [x] **`body inválido → 400`** (parametrized: `cantidad` 0/−1/1.5/`"3"`/`1e20`, unknown `motivo`, extra field, missing field; all `application/problem+json` with the right `type` and an `errors` member for Zod details) → `register-movement.schema.ts` (`z.strictObject`), `ZodValidationPipe` bound per-route via `@UsePipes`, `ZodError` → `urn:problem:validacion` + `errors` member in the filter. VO-rule cases (`cantidad` 0/−1/1.5/`1e20`) were already `cantidad-invalida` via the domain — Zod checks shape only, per the split.
 
 19. [ ] **`concurrencia: 20 COMPRA 1 sobre stock 5`** → exactly 5×201 + 15×409, final `cantidadDisponible` 0 → forces the atomic conditional `UPDATE … WHERE cantidad_disponible + :delta >= 0` (0 rows → `StockInsuficienteError`) and the SQLite mutex. The interim read-modify-write from step 12 is knowingly racy until this cycle; this red test is what justifies the adapter's atomic write.
 
