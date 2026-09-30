@@ -27,7 +27,6 @@ interface MovimientoResponse {
   cantidad: number;
   motivo: string;
   fecha: string;
-  stockDisponible: number;
 }
 
 interface StockResponse {
@@ -58,7 +57,11 @@ function postMovimiento(
 ): Promise<Response> {
   return fetch(`${baseUrl}/stock/movimientos`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...headers },
+    headers: {
+      'Content-Type': 'application/json',
+      'idempotency-key': randomUUID(),
+      ...headers,
+    },
     body: JSON.stringify(body),
   });
 }
@@ -119,7 +122,6 @@ describe('POST /stock/movimientos y GET /stock/:sku', () => {
     assert.equal(movimiento.cantidad, 5);
     assert.equal(movimiento.motivo, 'INGRESO');
     assert.ok(movimiento.fecha);
-    assert.equal(movimiento.stockDisponible, 5);
 
     const get = await fetch(`${baseUrl}/stock/ZAP-42-NEG`);
     assert.equal(get.status, 200);
@@ -135,6 +137,7 @@ describe('POST /stock/movimientos y GET /stock/:sku', () => {
         new Sku('ZAP-40-BLA'),
         new Cantidad(10),
         Motivo.INGRESO,
+        randomUUID(),
       );
 
     const response = await postMovimiento(baseUrl, {
@@ -146,7 +149,6 @@ describe('POST /stock/movimientos y GET /stock/:sku', () => {
     assert.equal(response.status, 201);
     const movimiento = (await response.json()) as MovimientoResponse;
     assert.equal(movimiento.motivo, 'COMPRA');
-    assert.equal(movimiento.stockDisponible, 7);
 
     const get = await fetch(`${baseUrl}/stock/ZAP-40-BLA`);
     const stock = (await get.json()) as StockResponse;
@@ -161,6 +163,7 @@ describe('POST /stock/movimientos y GET /stock/:sku', () => {
         new Sku('ZAP-41-ROJ'),
         new Cantidad(5),
         Motivo.INGRESO,
+        randomUUID(),
       );
 
     const response = await postMovimiento(baseUrl, {
@@ -198,6 +201,7 @@ describe('POST /stock/movimientos y GET /stock/:sku', () => {
         new Sku('ZAP-CONC'),
         new Cantidad(5),
         Motivo.INGRESO,
+        randomUUID(),
       );
 
     const responses = await Promise.all(
@@ -243,6 +247,7 @@ describe('POST /stock/movimientos y GET /stock/:sku', () => {
         new Sku('ZAP-MIX'),
         new Cantidad(10),
         Motivo.INGRESO,
+        randomUUID(),
       );
 
     // Stock 10 so nothing can lose: an INGRESO's delta is never
@@ -326,6 +331,109 @@ describe('POST /stock/movimientos y GET /stock/:sku', () => {
     }
   });
 
+  it('mismo Idempotency-Key → mismo movimiento, stock descuenta una vez', async () => {
+    await crearVarianteConItem(app, 'ZAP-IDEM');
+    await app
+      .get(StockService)
+      .registrarMovimiento(
+        new Sku('ZAP-IDEM'),
+        new Cantidad(10),
+        Motivo.INGRESO,
+        randomUUID(),
+      );
+
+    const body = { sku: 'ZAP-IDEM', cantidad: 3, motivo: 'COMPRA' };
+    const headers = { 'idempotency-key': 'retry-abc-123' };
+    const first = await postMovimiento(baseUrl, body, headers);
+    const second = await postMovimiento(baseUrl, body, headers);
+
+    assert.equal(first.status, 201);
+    assert.equal(second.status, 201);
+    const uno = (await first.json()) as MovimientoResponse;
+    const dos = (await second.json()) as MovimientoResponse;
+    assert.deepEqual(dos, uno);
+    assert.equal(uno.cantidad, 3);
+
+    const get = await fetch(`${baseUrl}/stock/ZAP-IDEM`);
+    const stock = (await get.json()) as StockResponse;
+    assert.equal(stock.stockDisponible, 7);
+
+    const [{ total }] = await app
+      .get(DataSource)
+      .query<[{ total: number }]>(
+        "SELECT COALESCE(SUM(delta), 0) AS total FROM movimiento_stock WHERE sku = 'ZAP-IDEM'",
+      );
+    assert.equal(Number(total), 7);
+  });
+
+  it('Idempotency-Key concurrente → un escritor, todos reciben el mismo movimiento', async () => {
+    await crearVarianteConItem(app, 'ZAP-IDEM-CONC');
+    await app
+      .get(StockService)
+      .registrarMovimiento(
+        new Sku('ZAP-IDEM-CONC'),
+        new Cantidad(10),
+        Motivo.INGRESO,
+        randomUUID(),
+      );
+
+    const responses = await Promise.all(
+      Array.from({ length: 10 }, () =>
+        postMovimiento(
+          baseUrl,
+          { sku: 'ZAP-IDEM-CONC', cantidad: 4, motivo: 'COMPRA' },
+          { 'idempotency-key': 'retry-concurrente-1' },
+        ),
+      ),
+    );
+
+    const bodies = (await Promise.all(
+      responses.map((r) => r.json()),
+    )) as MovimientoResponse[];
+    for (const b of bodies) {
+      assert.equal(bodies[0]!.id, b.id);
+      assert.equal(b.cantidad, 4);
+    }
+
+    const get = await fetch(`${baseUrl}/stock/ZAP-IDEM-CONC`);
+    const stock = (await get.json()) as StockResponse;
+    assert.equal(stock.stockDisponible, 6);
+  });
+
+  it('mismo Idempotency-Key con payload distinto → 422, sin re-aplicar', async () => {
+    await crearVarianteConItem(app, 'ZAP-IDEM-MISM');
+    await app
+      .get(StockService)
+      .registrarMovimiento(
+        new Sku('ZAP-IDEM-MISM'),
+        new Cantidad(10),
+        Motivo.INGRESO,
+        randomUUID(),
+      );
+
+    const headers = { 'idempotency-key': 'retry-conflict-1' };
+    const first = await postMovimiento(
+      baseUrl,
+      { sku: 'ZAP-IDEM-MISM', cantidad: 3, motivo: 'COMPRA' },
+      headers,
+    );
+    const second = await postMovimiento(
+      baseUrl,
+      { sku: 'ZAP-IDEM-MISM', cantidad: 9, motivo: 'COMPRA' },
+      headers,
+    );
+
+    assert.equal(first.status, 201);
+    assert.equal(second.status, 422);
+    const problem = (await second.json()) as Record<string, unknown>;
+    assert.equal(problem.type, 'urn:problem:reintento-distinto');
+    assert.equal(problem.status, 422);
+
+    const get = await fetch(`${baseUrl}/stock/ZAP-IDEM-MISM`);
+    const stock = (await get.json()) as StockResponse;
+    assert.equal(stock.stockDisponible, 7);
+  });
+
   it(
     'INGRESO 3_000_000_000 → 400 cantidad-invalida (postgres)',
     { skip: process.env.DB_TYPE !== 'postgres' },
@@ -337,7 +445,8 @@ describe('POST /stock/movimientos y GET /stock/:sku', () => {
           new Sku('ZAP-BIG'),
           new Cantidad(1),
           Motivo.INGRESO,
-        );
+        randomUUID(),
+      );
 
       const response = await postMovimiento(baseUrl, {
         sku: 'ZAP-BIG',
@@ -351,6 +460,27 @@ describe('POST /stock/movimientos y GET /stock/:sku', () => {
       assert.equal(problem.status, 400);
     },
   );
+
+  it('sin Idempotency-Key → 400 validacion', async () => {
+    const response = await fetch(`${baseUrl}/stock/movimientos`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sku: 'X',
+        cantidad: 1,
+        motivo: 'COMPRA',
+      }),
+    });
+
+    assert.equal(response.status, 400);
+    const problem = (await response.json()) as Record<string, unknown>;
+    assert.equal(
+      problem.type,
+      'urn:problem:clave-idempotencia-requerida',
+    );
+    assert.equal(problem.status, 400);
+    assert.match(String(problem.detail), /Idempotency-Key/);
+  });
 
   it('un SKU desconocido → 404 problem detail en POST', async () => {
     const response = await postMovimiento(baseUrl, {

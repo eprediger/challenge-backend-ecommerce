@@ -27,6 +27,22 @@ paths:
         indica `motivo` (ENTRADA: `INGRESO`, `DEVOLUCION`, `AJUSTE_POSITIVO`;
         SALIDA: `COMPRA`, `AJUSTE_NEGATIVO`). Si la salida supera el stock
         disponible, el movimiento se rechaza y no se registra nada.
+
+        El header obligatorio `Idempotency-Key` hace el request seguro de reintentar:
+        una segunda llamada con la misma clave devuelve la respuesta del
+        movimiento ya registrado sin aplicar el cambio dos veces. El servidor
+        rechaza un movimiento que no pueda deduplicar (400).
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
+          description: >
+            Clave de deduplicación del cliente; los reintentos con la misma
+            clave y el mismo body reciben la respuesta original. Reutilizar
+            la clave con un body distinto se rechaza con 422.
       requestBody:
         required: true
         content:
@@ -50,18 +66,26 @@ paths:
                 cantidad: 2
                 motivo: COMPRA
                 fecha: '2026-09-29T15:04:05.321Z'
-                stockDisponible: 8
         '400':
           description: |
-            Body inválido. `type` distingue el origen:
-            `urn:problem:validacion` (la forma no cumple el esquema; el detalle
-            está en `errors`), `urn:problem:cantidad-invalida` o
+            Request inválido. `type` distingue el origen:
+            `urn:problem:clave-idempotencia-requerida` (falta el header),
+            `urn:problem:validacion` (la forma del body no cumple el esquema;
+            el detalle está en `errors`), `urn:problem:cantidad-invalida` o
             `urn:problem:sku-invalido` (reglas de los objetos de dominio).
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
               examples:
+                claveFaltante:
+                  summary: Falta el header Idempotency-Key
+                  value:
+                    type: urn:problem:clave-idempotencia-requerida
+                    title: Idempotency-Key requerido
+                    status: 400
+                    detail: El encabezado Idempotency-Key es obligatorio y no puede estar vacío
+                    instance: 9b8a7c6d-1111-4000-8000-0000000000a0
                 formaInvalida:
                   summary: La forma del body no cumple el esquema
                   value:
@@ -116,6 +140,21 @@ paths:
                 detail: 'Stock insuficiente para el SKU ZAP-RUNNER-42-NEGRO: quedan 1'
                 instance: 9b8f7c6d-1111-4000-8000-0000000000ae
                 stockDisponible: 1
+        '422':
+          description: |
+            El `Idempotency-Key` ya fue usado con un movimiento distinto
+            (draft-ietf-httpapi-idempotency-key-header). No se registró
+            nada nuevo; el movimiento original sigue intacto.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                type: urn:problem:reintento-distinto
+                title: Reintento distinto
+                status: 422
+                detail: 'La clave "pedido-1001" ya fue usada con otro movimiento (COMPRA 3 de ZAP-RUNNER-42-NEGRO; recibido COMPRA 9 de ZAP-RUNNER-42-NEGRO)'
+                instance: 9b8f7c6d-1111-4000-8000-0000000000af
         '500':
           description: Error inesperado.
           content:
@@ -190,7 +229,7 @@ components:
 
     MovimientoRegistrado:
       type: object
-      required: [id, sku, cantidad, motivo, fecha, stockDisponible]
+      required: [id, sku, cantidad, motivo, fecha]
       properties:
         id:
           type: string
@@ -204,9 +243,6 @@ components:
         fecha:
           type: string
           format: date-time
-        stockDisponible:
-          type: integer
-          description: Stock disponible del SKU después de aplicar el movimiento.
 
     StockDisponible:
       type: object

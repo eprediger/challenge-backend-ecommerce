@@ -1,4 +1,4 @@
-import { Check, Column, Entity, JoinColumn, ManyToOne, PrimaryColumn } from 'typeorm';
+import { Check, Column, Entity, Index, JoinColumn, ManyToOne, PrimaryColumn } from 'typeorm';
 import { Motivo } from '../../domain/motivo';
 import { StockOrmEntity } from './stock.orm-entity';
 
@@ -23,6 +23,14 @@ export class MovimientoStockOrmEntity {
    */
   @Column({ type: 'int' })
   delta!: number;
+
+  /**
+   * Client-supplied dedup key; the unique constraint arbitrates
+   * concurrent retries — the loser re-reads this row.
+   */
+  @Index({ unique: true })
+  @Column({ name: 'idempotency_key', type: 'text' })
+  claveIdempotencia!: string;
 
   @Column({
     type: 'simple-enum',

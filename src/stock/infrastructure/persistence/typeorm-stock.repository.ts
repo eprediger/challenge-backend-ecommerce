@@ -1,13 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource, QueryFailedError } from 'typeorm';
-import type { Sku } from '../../../shared/domain/sku';
+import { Sku } from '../../../shared/domain/sku';
+import { Cantidad } from '../../domain/cantidad';
 import {
   CantidadInvalidaError,
+  ReintentoDistintoError,
   StockInsuficienteError,
   VarianteNoEncontradaError,
 } from '../../domain/errors';
-import type { Movimiento } from '../../domain/movimiento';
+import { Motivo } from '../../domain/motivo';
+import { Movimiento } from '../../domain/movimiento';
 import { Stock } from '../../domain/stock';
 import { StockRepository } from '../../domain/stock.repository';
 import { MovimientoStockOrmEntity } from './movimiento-stock.orm-entity';
@@ -47,9 +50,18 @@ export class TypeOrmStockRepository extends StockRepository {
    * so the fresh row is read back for the
    * {@link StockInsuficienteError}. The movement inserts in the same
    * transaction.
+   *
+   * With `claveIdempotencia`, the unique index on
+   * `idempotency_key` arbitrates retries: on violation the whole
+   * transaction rolls back and the already-persisted movement is
+   * re-read — an identical payload gets it replayed, a different
+   * payload is refused with `ReintentoDistintoError` (422).
    */
-  async guardar(movimiento: Movimiento): Promise<void> {
-    await this.serializado(async () => {
+  async guardar(
+    movimiento: Movimiento,
+    claveIdempotencia: string,
+  ): Promise<Movimiento> {
+    return this.serializado(async () => {
       try {
         await this.dataSource.transaction(async (em) => {
           const result = await em
@@ -82,11 +94,28 @@ export class TypeOrmStockRepository extends StockRepository {
             id: movimiento.id,
             sku: movimiento.sku.valor,
             delta: movimiento.deltaConSigno(),
+            claveIdempotencia,
             motivo: movimiento.motivo.clave,
             fecha: movimiento.fecha,
           });
         });
+        return movimiento;
       } catch (error) {
+        const existente = await this.buscarMovimiento(claveIdempotencia);
+        if (existente !== null) {
+          if (
+            existente.sku.valor !== movimiento.sku.valor ||
+            existente.cantidad.valor !== movimiento.cantidad.valor ||
+            existente.motivo !== movimiento.motivo
+          ) {
+            throw new ReintentoDistintoError(
+              claveIdempotencia,
+              existente,
+              movimiento,
+            );
+          }
+          return existente;
+        }
         // Postgres `22003` — a delta beyond int4 range is a domain
         // invalid quantity, not an infrastructure failure.
         if (
@@ -98,6 +127,28 @@ export class TypeOrmStockRepository extends StockRepository {
         throw error;
       }
     });
+  }
+
+  /**
+   * The `Movimiento` persisted under `claveIdempotencia`, or `null`.
+   * Rehydrates from the ledger row — `Cantidad` is `|delta|`.
+   */
+  async buscarMovimiento(
+    clave: string,
+  ): Promise<Movimiento | null> {
+    const fila = await this.dataSource
+      .getRepository(MovimientoStockOrmEntity)
+      .findOneBy({ claveIdempotencia: clave });
+    if (fila === null) {
+      return null;
+    }
+    return new Movimiento(
+      fila.id,
+      new Sku(fila.sku),
+      new Cantidad(Math.abs(fila.delta)),
+      Motivo.desde(fila.motivo),
+      fila.fecha,
+    );
   }
 
   /**

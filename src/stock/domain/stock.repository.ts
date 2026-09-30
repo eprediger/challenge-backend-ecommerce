@@ -19,9 +19,24 @@ export abstract class StockRepository {
   abstract crear(stock: Stock): Promise<void>;
 
   /**
-   * Persists a `Movimiento` and applies its delta to
-   * `cantidadDisponible`,
-   * atomically.
+   * The `Movimiento` persisted under `claveIdempotencia`, or `null`.
+   * Checked before `guardar` so a reused key is answered — replayed or
+   * refused — before the movement is processed.
    */
-  abstract guardar(movimiento: Movimiento): Promise<void>;
+  abstract buscarMovimiento(
+    claveIdempotencia: string,
+  ): Promise<Movimiento | null>;
+
+  /**
+   * Persists a `Movimiento` under `claveIdempotencia` and applies its
+   * delta to `cantidadDisponible`, atomically. A duplicate key returns
+   * the already-persisted `Movimiento` instead of applying twice.
+   *
+   * @returns The `Movimiento` that ended up persisted — `movimiento`
+   *   itself, or its idempotent twin.
+   */
+  abstract guardar(
+    movimiento: Movimiento,
+    claveIdempotencia: string,
+  ): Promise<Movimiento>;
 }

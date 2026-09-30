@@ -2,21 +2,14 @@ import { Injectable } from '@nestjs/common';
 import type { Sku } from '../../shared/domain/sku';
 import { enrichWideEvent } from '../../shared/infrastructure/http/request-context';
 import type { Cantidad } from '../domain/cantidad';
-import { VarianteNoEncontradaError } from '../domain/errors';
+import {
+  ReintentoDistintoError,
+  VarianteNoEncontradaError,
+} from '../domain/errors';
 import type { Motivo } from '../domain/motivo';
 import type { Movimiento } from '../domain/movimiento';
 import { Stock } from '../domain/stock';
 import { StockRepository } from '../domain/stock.repository';
-
-/**
- * The movement and the `cantidadDisponible` it leaves behind,
- * returned by {@link StockService.registrarMovimiento} — the 201
- * response body.
- */
-interface MovimientoRegistrado {
-  movimiento: Movimiento;
-  cantidadDisponible: number;
-}
 
 /**
  * Stock use cases. Speaks the domain language; persistence goes
@@ -36,10 +29,13 @@ export class StockService {
   }
 
   /**
-   * Registers a movement on the `Stock` of `sku`.
+   * Registers a movement on the `Stock` of `sku`. A
+   * `claveIdempotencia` makes the call safe to retry: a duplicate
+   * returns the already-recorded `Movimiento` instead of applying
+   * twice.
    *
-   * @returns The recorded {@link Movimiento} and the new
-   *   `cantidadDisponible`.
+   * @returns The recorded {@link Movimiento} — or its idempotent twin
+   *   when `claveIdempotencia` was seen before.
    * @throws {@link VarianteNoEncontradaError} when no stock exists
    *   for the SKU.
    * @throws {@link StockInsuficienteError} when the movement would
@@ -50,19 +46,36 @@ export class StockService {
     sku: Sku,
     cantidad: Cantidad,
     motivo: Motivo,
-  ): Promise<MovimientoRegistrado> {
+    claveIdempotencia: string,
+  ): Promise<Movimiento> {
     enrichWideEvent({
       sku: sku.valor,
       cantidad: cantidad.valor,
       motivo: motivo.clave,
     });
+    // Key reuse is answered before processing: identical → replay,
+    // different payload → 422 (the draft's semantics).
+    const previo = await this.stockRepository.buscarMovimiento(claveIdempotencia);
+    if (previo !== null) {
+      if (
+        previo.sku.valor !== sku.valor ||
+        previo.cantidad.valor !== cantidad.valor ||
+        previo.motivo !== motivo
+      ) {
+        throw new ReintentoDistintoError(claveIdempotencia, previo, {
+          sku,
+          cantidad,
+          motivo,
+        });
+      }
+      return previo;
+    }
     const stock = await this.stockRepository.buscar(sku);
     if (stock === null) {
       throw new VarianteNoEncontradaError(sku);
     }
     const movimiento = stock.registrar(cantidad, motivo, new Date());
-    await this.stockRepository.guardar(movimiento);
-    return { movimiento, cantidadDisponible: stock.cantidadDisponible };
+    return this.stockRepository.guardar(movimiento, claveIdempotencia);
   }
 
   /**

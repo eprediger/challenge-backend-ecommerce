@@ -3,5 +3,6 @@
  */
 export { CantidadInvalidaError } from './cantidad-invalida.error';
 export { MotivoInvalidoError } from './motivo-invalido.error';
+export { ReintentoDistintoError } from './reintento-distinto.error';
 export { StockInsuficienteError } from './stock-insuficiente.error';
 export { VarianteNoEncontradaError } from './variante-no-encontrada.error';

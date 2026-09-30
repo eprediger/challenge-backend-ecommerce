@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
   HttpCode,
   HttpStatus,
   Param,
@@ -13,6 +14,7 @@ import { ZodValidationPipe } from '../../../shared/infrastructure/http/zod-valid
 import { StockService } from '../../application/stock.service';
 import { Cantidad } from '../../domain/cantidad';
 import { Motivo } from '../../domain/motivo';
+import { ClaveIdempotenciaRequeridaError } from './clave-idempotencia-requerida.error';
 import {
   registrarMovimientoSchema,
   type RegistrarMovimientoBody,
@@ -33,20 +35,24 @@ export class StockController {
   @UsePipes(new ZodValidationPipe(registrarMovimientoSchema))
   async registrarMovimiento(
     @Body() body: RegistrarMovimientoBody,
+    @Headers('idempotency-key') idempotencyKey?: string,
   ): Promise<unknown> {
-    const { movimiento, cantidadDisponible } =
-      await this.stockService.registrarMovimiento(
-        new Sku(body.sku),
-        new Cantidad(body.cantidad),
-        Motivo.desde(body.motivo),
-      );
+    const clave = idempotencyKey?.trim();
+    if (!clave) {
+      throw new ClaveIdempotenciaRequeridaError();
+    }
+    const movimiento = await this.stockService.registrarMovimiento(
+      new Sku(body.sku),
+      new Cantidad(body.cantidad),
+      Motivo.desde(body.motivo),
+      clave,
+    );
     return {
       id: movimiento.id,
       sku: movimiento.sku.valor,
       cantidad: movimiento.cantidad.valor,
       motivo: movimiento.motivo.clave,
       fecha: movimiento.fecha.toISOString(),
-      stockDisponible: cantidadDisponible,
     };
   }
 

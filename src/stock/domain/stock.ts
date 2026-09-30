@@ -56,15 +56,8 @@ export class Stock {
    * requests and maps to the same error.
    */
   registrar(cantidad: Cantidad, motivo: Motivo, fecha: Date): Movimiento {
-    const movimiento = new Movimiento(
-      randomUUID(),
-      this.sku,
-      cantidad,
-      motivo,
-      fecha,
-    );
-    const nuevaCantidadDisponible =
-      this._cantidadDisponible + movimiento.deltaConSigno();
+    const delta = cantidad.valor * motivo.direccion;
+    const nuevaCantidadDisponible = this._cantidadDisponible + delta;
     if (nuevaCantidadDisponible < 0) {
       throw new StockInsuficienteError(
         this.sku,
@@ -72,6 +65,13 @@ export class Stock {
         cantidad,
       );
     }
+    const movimiento = new Movimiento(
+      randomUUID(),
+      this.sku,
+      cantidad,
+      motivo,
+      fecha,
+    );
     this._cantidadDisponible = nuevaCantidadDisponible;
     return movimiento;
   }

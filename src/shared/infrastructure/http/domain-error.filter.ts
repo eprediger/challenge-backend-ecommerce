@@ -8,9 +8,11 @@ import {
 import type { Response } from 'express';
 import { ZodError } from 'zod';
 import { SkuInvalidoError } from '../../domain/sku-invalido.error';
+import { ClaveIdempotenciaRequeridaError } from '../../../stock/infrastructure/http/clave-idempotencia-requerida.error';
 import {
   CantidadInvalidaError,
   MotivoInvalidoError,
+  ReintentoDistintoError,
   StockInsuficienteError,
   VarianteNoEncontradaError,
 } from '../../../stock/domain/errors';
@@ -52,6 +54,11 @@ const PROBLEMS = new Map<new (...args: never[]) => Error, ProblemSeed>([
   [CantidadInvalidaError, { status: HttpStatus.BAD_REQUEST }],
   [SkuInvalidoError, { status: HttpStatus.BAD_REQUEST }],
   [MotivoInvalidoError, { status: HttpStatus.BAD_REQUEST }],
+  [ClaveIdempotenciaRequeridaError, { status: HttpStatus.BAD_REQUEST }],
+  [
+    ReintentoDistintoError,
+    { status: HttpStatus.UNPROCESSABLE_ENTITY },
+  ],
   [
     ZodError,
     {
