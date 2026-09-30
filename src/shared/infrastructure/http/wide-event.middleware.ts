@@ -37,11 +37,6 @@ function eventContext(config: ConfigService<Env, true>): Record<string, unknown>
  * wrap the whole pipeline so route handlers keep the context).
  * `requestId` honors an inbound `x-request-id` header so callers can
  * correlate, else a fresh UUID.
- *
- * ponytail: no tail sampling (keep errors + slow requests, sample the
- * rest) — meaningless at dev volumes; emission is one place, so a
- * shouldSample(event) predicate slots in later without touching the
- * format.
  */
 export function wideEventMiddleware(config: ConfigService<Env, true>) {
   const envContext = eventContext(config);
