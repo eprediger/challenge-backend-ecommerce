@@ -7,7 +7,7 @@
 # not depend on this setting. To reach the app from another device, remove the '127.0.0.1:' prefix.
 services:
   app:
-    image: node:22
+    build: .
     user: node
     working_dir: /app
     volumes:
