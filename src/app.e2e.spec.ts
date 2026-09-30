@@ -1,7 +1,14 @@
 import { strict as assert } from 'node:assert';
 import { randomUUID } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
-import { after, afterEach, before, describe, it } from 'node:test';
+import {
+  after,
+  afterEach,
+  before,
+  beforeEach,
+  describe,
+  it,
+} from 'node:test';
 import type { INestApplication } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { DataSource } from 'typeorm';
@@ -28,28 +35,18 @@ interface StockResponse {
   stockDisponible: number;
 }
 
-async function crearVarianteConStock(
+async function crearVarianteConItem(
   app: INestApplication,
   sku: string,
 ): Promise<void> {
   const dataSource = app.get(DataSource);
-  const categoriaId = randomUUID();
-  const productoId = randomUUID();
-  await dataSource
-    .getRepository(CategoriaOrmEntity)
-    .insert({ id: categoriaId, nombre: 'Calzado' });
-  await dataSource.getRepository(ProductoOrmEntity).insert({
-    id: productoId,
-    nombre: 'Zapatilla Runner',
-    descripcion: 'Zapatilla de running',
-    precioCentavos: 129990,
-    moneda: 'ARS',
-    categoriaId,
-  });
+  const producto = await dataSource
+    .getRepository(ProductoOrmEntity)
+    .findOneByOrFail({ nombre: 'Zapatilla Runner' });
   await dataSource.getRepository(VarianteOrmEntity).insert({
     id: randomUUID(),
     sku,
-    productoId,
+    productoId: producto.id,
   });
   await app.get(StockService).crearItem(new Sku(sku));
 }
@@ -86,8 +83,25 @@ describe('POST /stock/movimientos y GET /stock/:sku', () => {
     await app.get(DataSource).synchronize(true);
   });
 
+  // The baseline catalog every spec arranges against — spec
+  // variantes hang off this one producto, the real catalog shape.
+  beforeEach(async () => {
+    const dataSource = app.get(DataSource);
+    const categoria = await dataSource
+      .getRepository(CategoriaOrmEntity)
+      .save({ id: randomUUID(), nombre: 'Calzado' });
+    await dataSource.getRepository(ProductoOrmEntity).save({
+      id: randomUUID(),
+      nombre: 'Zapatilla Runner',
+      descripcion: 'Zapatilla de running',
+      precioCentavos: 129990,
+      moneda: 'ARS',
+      categoriaId: categoria.id,
+    });
+  });
+
   it('un INGRESO registra el movimiento y el GET responde el stock disponible', async () => {
-    await crearVarianteConStock(app, 'ZAP-42-NEG');
+    await crearVarianteConItem(app, 'ZAP-42-NEG');
 
     const response = await postMovimiento(baseUrl, {
       sku: 'ZAP-42-NEG',
@@ -114,7 +128,7 @@ describe('POST /stock/movimientos y GET /stock/:sku', () => {
   });
 
   it('una COMPRA descuenta el stock disponible', async () => {
-    await crearVarianteConStock(app, 'ZAP-40-BLA');
+    await crearVarianteConItem(app, 'ZAP-40-BLA');
     await app
       .get(StockService)
       .registrarMovimiento(
@@ -140,7 +154,7 @@ describe('POST /stock/movimientos y GET /stock/:sku', () => {
   });
 
   it('una COMPRA mayor al disponible → 409 con problem detail', async () => {
-    await crearVarianteConStock(app, 'ZAP-41-ROJ');
+    await crearVarianteConItem(app, 'ZAP-41-ROJ');
     await app
       .get(StockService)
       .registrarMovimiento(
@@ -177,7 +191,7 @@ describe('POST /stock/movimientos y GET /stock/:sku', () => {
   });
 
   it('20 COMPRA 1 concurrentes sobre stock 5 → 5×201, 15×409, disponible 0', async () => {
-    await crearVarianteConStock(app, 'ZAP-CONC');
+    await crearVarianteConItem(app, 'ZAP-CONC');
     await app
       .get(StockService)
       .registrarMovimiento(
@@ -222,7 +236,7 @@ describe('POST /stock/movimientos y GET /stock/:sku', () => {
   });
 
   it('INGRESO y COMPRA concurrentes → todos 201 y SUM(delta) == disponible', async () => {
-    await crearVarianteConStock(app, 'ZAP-MIX');
+    await crearVarianteConItem(app, 'ZAP-MIX');
     await app
       .get(StockService)
       .registrarMovimiento(
@@ -269,6 +283,49 @@ describe('POST /stock/movimientos y GET /stock/:sku', () => {
     assert.equal(Number(total), 30);
   });
 
+  it('invariante: SUM(delta) == cantidad_disponible por SKU', async () => {
+    await crearVarianteConItem(app, 'INV-A');
+    await crearVarianteConItem(app, 'INV-B');
+    const posts = [
+      { sku: 'INV-A', cantidad: 10, motivo: 'INGRESO', expected: 201 },
+      { sku: 'INV-A', cantidad: 3, motivo: 'COMPRA', expected: 201 },
+      { sku: 'INV-A', cantidad: 2, motivo: 'DEVOLUCION', expected: 201 },
+      // The rejected COMPRA must not enter the ledger either.
+      { sku: 'INV-A', cantidad: 99, motivo: 'COMPRA', expected: 409 },
+      { sku: 'INV-B', cantidad: 4, motivo: 'INGRESO', expected: 201 },
+      { sku: 'INV-B', cantidad: 4, motivo: 'AJUSTE_NEGATIVO', expected: 201 },
+    ] as const;
+    for (const { sku, cantidad, motivo, expected } of posts) {
+      const response = await postMovimiento(baseUrl, {
+        sku,
+        cantidad,
+        motivo,
+      });
+      assert.equal(
+        response.status,
+        expected,
+        `${motivo} ${cantidad} ${sku}`,
+      );
+    }
+
+    const rows = await app
+      .get(DataSource)
+      .query<Array<{ sku: string; cantidad_disponible: number; total: number }>>(
+        `SELECT s.sku, s.cantidad_disponible, COALESCE(SUM(m.delta), 0) AS total
+         FROM stock s LEFT JOIN movimiento_stock m ON m.sku = s.sku
+         GROUP BY s.sku`,
+      );
+
+    assert.equal(rows.length, 2);
+    for (const row of rows) {
+      assert.equal(
+        Number(row.cantidad_disponible),
+        Number(row.total),
+        `${row.sku}: disponible ${row.cantidad_disponible} != ledger ${row.total}`,
+      );
+    }
+  });
+
   it('un SKU desconocido → 404 problem detail en POST', async () => {
     const response = await postMovimiento(baseUrl, {
       sku: 'NO-EXISTE',
@@ -300,7 +357,7 @@ describe('POST /stock/movimientos y GET /stock/:sku', () => {
     assert.equal(problem.status, 404);
   });
 
-  for (const [caso, body, tipoEsperado] of [
+  for (const [name, body, expectedType] of [
     [
       'cantidad 0',
       { sku: 'X', cantidad: 0, motivo: 'COMPRA' },
@@ -342,7 +399,7 @@ describe('POST /stock/movimientos y GET /stock/:sku', () => {
       'urn:problem:validacion',
     ],
   ] as const) {
-    it(`body inválido (${caso}) → 400 ${tipoEsperado}`, async () => {
+    it(`body inválido (${name}) → 400 ${expectedType}`, async () => {
       const response = await postMovimiento(baseUrl, body);
 
       assert.equal(response.status, 400);
@@ -351,10 +408,10 @@ describe('POST /stock/movimientos y GET /stock/:sku', () => {
         /application\/problem\+json/,
       );
       const problem = (await response.json()) as Record<string, unknown>;
-      assert.equal(problem.type, tipoEsperado);
+      assert.equal(problem.type, expectedType);
       assert.equal(problem.status, 400);
       assert.equal(typeof problem.detail, 'string');
-      if (tipoEsperado === 'urn:problem:validacion') {
+      if (expectedType === 'urn:problem:validacion') {
         assert.ok(Array.isArray(problem.errors));
         assert.ok((problem.errors as unknown[]).length > 0);
       }
@@ -362,7 +419,7 @@ describe('POST /stock/movimientos y GET /stock/:sku', () => {
   }
 
   it('un request emite un wide event', async () => {
-    await crearVarianteConStock(app, 'REM-001');
+    await crearVarianteConItem(app, 'REM-001');
     const requestId = randomUUID();
     const logs: Record<string, unknown>[] = [];
     const originalLog = console.log;

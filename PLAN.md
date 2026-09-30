@@ -343,7 +343,7 @@ src/
 
 19. [x] **`concurrencia: 20 COMPRA 1 sobre stock 5`** → exactly 5×201 + 15×409, final `cantidadDisponible` 0 → atomic conditional `UPDATE … SET cantidad_disponible = cantidad_disponible + :delta WHERE sku = :sku AND cantidad_disponible + :delta >= 0`; 0 rows → re-read the row (fresh balance for the error's `detail`) → `StockInsuficienteError`, or `VarianteNoEncontradaError` if the row vanished. Movement inserts in the same transaction. SQLite: `serializado()`, a promise-chain mutex — the sqlite3 driver rejects overlapping write transactions (`SQLITE_BUSY`); Postgres relies on row locks and skips it.
 
-20. [ ] **`invariante: SUM(delta) == cantidad_disponible`** per SKU (SQL check inside the spec).
+20. [x] **`invariante: SUM(delta) == cantidad_disponible`** per SKU — spec exercises INGRESO/COMPRA/DEVOLUCION/AJUSTE_NEGATIVO on two SKUs plus a rejected COMPRA, then asserts `stock = SUM(delta)` via a `GROUP BY` over all rows. A `beforeEach` seeds the baseline catalog (`Calzado`/`Zapatilla Runner`) after the wipe, and every spec's variantes attach to that shared producto — the real catalog shape.
 
 21. [ ] **Postgres only** (`DB_TYPE=postgres`): `INGRESO 3_000_000_000` → 400, not 500 → forces `22003` → `CantidadInvalidaError` translation in the adapter.
 
