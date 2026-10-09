@@ -200,7 +200,7 @@ erDiagram
     }
 ```
 
-- **La línea punteada `variante — stock` es deliberada:** un FK `stock.sku → variante.sku` exigiría una relación ORM, que importaría una entidad de Catalogo dentro del módulo Stock. Los contextos se encuentran solo en `Sku` — si mañana viven en bases separadas (un split a microservicios), no hay ninguna constraint cross-context que desarmar. El precio: `INSERT INTO stock` con un SKU inexistente no lo rechaza la base; la integridad la garantiza la aplicación (`StockService.createItem` es el único punto de creación).
+- **La línea punteada `variante — stock` es deliberada:** un FK `stock.sku → variante.sku` exigiría una relación ORM, que importaría una entidad de Catalogo dentro del módulo Stock. Los contextos se encuentran solo en `Sku` — si mañana viven en bases separadas (un split a microservicios), no hay ninguna constraint cross-context que desarmar. El trade-off: `INSERT INTO stock` con un SKU inexistente no lo rechaza la base; la integridad la garantiza la aplicación (`StockService.createItem` es el único punto de creación).
 - **`movimiento_stock.sku → stock.sku` sí tiene FK**: ambas tablas pertenecen a Stock, el vínculo es gratis.
 - **Invariante chequeable en SQL:** `stock.cantidad_disponible == SUM(movimiento_stock.delta)` por SKU — `delta` se guarda con signo para que la invariante sea una suma directa, y hay una spec que la verifica tras ejercitar varios motivos.
 - **`atributo_variante` sin id surrogate:** es un value object (no tiene identidad), su PK `(variante_id, nombre)` es a la vez el backstop de unicidad de nombres por variante.
